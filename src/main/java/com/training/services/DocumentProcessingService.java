@@ -67,6 +67,7 @@ public class DocumentProcessingService {
             socketNotifier.notifySuccess(documentId);
         } catch (Exception ex) {
             logger.error("Failed to process document {}", documentId, ex);
+            socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
         }
     }
 
