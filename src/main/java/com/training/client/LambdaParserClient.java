@@ -1,12 +1,15 @@
 package com.training.client;
 
+import com.training.data.request.DocumentParserRequest;
 import com.training.data.result.ParsedResult;
+import io.micronaut.http.annotation.Body;
+import io.micronaut.http.annotation.Post;
+import io.micronaut.http.client.annotation.Client;
+import reactor.core.publisher.Mono;
 
-/**
- * Stub — represents the external "house lambda service" Jhefrey described
- * in the mock interview as owning the actual parsing logic. Not part of
- * the exercise; do not modify.
- */
+@Client("/document-parser")
 public interface LambdaParserClient {
-    ParsedResult parse(byte[] data, String contentType);
+
+    @Post
+    Mono<ParsedResult> parse(@Body DocumentParserRequest request);
 }
