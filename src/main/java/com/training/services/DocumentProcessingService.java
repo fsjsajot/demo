@@ -1,6 +1,7 @@
 package com.training.services;
 
 import com.training.client.LambdaParserClient;
+import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
@@ -61,10 +62,13 @@ public class DocumentProcessingService {
         }
 
         try {
-            ParsedResult result = lambdaParserClient.parse(data, contentType);
-            documentStore.save(documentId, contentType, result);
+            lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
+                    .map(parsedResult -> {
+                        documentStore.save(documentId, contentType, parsedResult);
+                        socketNotifier.notifySuccess(documentId);
 
-            socketNotifier.notifySuccess(documentId);
+                        return parsedResult;
+                    });
         } catch (Exception ex) {
             logger.error("Failed to process document {}", documentId, ex);
         }
