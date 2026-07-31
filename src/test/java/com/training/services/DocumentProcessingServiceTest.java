@@ -1,18 +1,17 @@
 package com.training.services;
 
 import com.training.client.LambdaParserClient;
+import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
 import com.training.messaging.SocketNotifier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
-import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -42,7 +41,7 @@ class DocumentProcessingServiceTest {
     void shouldProcessPdfUpload() {
         UploadRequest uploadRequest = new FakeUploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
 
-        documentProcessingService.processUpload(uploadRequest);
+        documentProcessingService.processUpload(uploadRequest).block();
 
         assertEquals("pdf", fakeLambdaParserClient.lastContentType);
         assertEquals("doc-1", fakeDocumentStore.savedDocumentId);
@@ -54,7 +53,7 @@ class DocumentProcessingServiceTest {
     void shouldProcessExcelUpload() {
         UploadRequest uploadRequest = new FakeUploadRequest("doc-2", new ByteArrayInputStream(XLS_OLE_BYTES));
 
-        documentProcessingService.processUpload(uploadRequest);
+        documentProcessingService.processUpload(uploadRequest).block();
 
         assertEquals("excel", fakeLambdaParserClient.lastContentType);
         assertEquals("doc-2", fakeDocumentStore.savedDocumentId);
@@ -65,7 +64,7 @@ class DocumentProcessingServiceTest {
     @Test
     void shouldIgnoreNullInputStream() {
         FakeUploadRequest uploadRequest = new FakeUploadRequest("doc-1", null);
-        documentProcessingService.processUpload(uploadRequest);
+        documentProcessingService.processUpload(uploadRequest).block();
 
         assertNull(fakeLambdaParserClient.lastContentType);
         assertNull(fakeDocumentStore.savedDocumentId);
@@ -75,7 +74,7 @@ class DocumentProcessingServiceTest {
     @Test
     void shouldDoNothingUnrecognizedFileType() {
         FakeUploadRequest uploadRequest = new FakeUploadRequest("doc-1", new ByteArrayInputStream(UNKNOWN_BYTES));
-        documentProcessingService.processUpload(uploadRequest);
+        documentProcessingService.processUpload(uploadRequest).block();
 
         assertNull(fakeLambdaParserClient.lastContentType);
         assertNull(fakeDocumentStore.savedDocumentId);
@@ -125,13 +124,13 @@ class DocumentProcessingServiceTest {
         boolean shouldThrowException;
 
         @Override
-        public ParsedResult parse(byte[] data, String contentType) {
+        public Mono<ParsedResult> parse(DocumentParserRequest request) {
             if (shouldThrowException) {
                 throw new RuntimeException("Simulated parsing exception error.");
             }
 
-            this.lastContentType = contentType;
-            return new ParsedResult();
+            this.lastContentType = request.contentType;
+            return Mono.just(new ParsedResult(request.contentType));
         }
     }
 
