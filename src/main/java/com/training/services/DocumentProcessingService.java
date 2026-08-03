@@ -1,11 +1,14 @@
 package com.training.services;
 
 import com.training.client.LambdaParserClient;
+import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
 import com.training.messaging.SocketNotifier;
+import com.training.messaging.SocketNotifierService;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +16,8 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.io.InputStream;
+
+import static com.training.services.ContentTypeService.detectType;
 
 /**
  * Handles an incoming loan document upload: detects the content type, parses
@@ -24,16 +29,17 @@ public class DocumentProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
 
-    DocumentStore documentStore;
-    LambdaParserClient lambdaParserClient;
-    SocketNotifier socketNotifier;
 
-    public DocumentProcessingService(DocumentStore documentStore,
-                                      LambdaParserClient lambdaParserClient,
-                                      SocketNotifier socketNotifier) {
-        this.documentStore = documentStore;
+    DocumentService documentService;
+    LambdaParserClient lambdaParserClient;
+    SocketNotifierService socketNotifierService;
+
+    public DocumentProcessingService(DocumentService documentService,
+            LambdaParserClient lambdaParserClient,
+                                     SocketNotifierService socketNotifierService) {
+        this.documentService = documentService;
         this.lambdaParserClient = lambdaParserClient;
-        this.socketNotifier = socketNotifier;
+        this.socketNotifierService = socketNotifierService;
     }
 
     public Mono<Void> processUpload(UploadRequest request) {
@@ -62,52 +68,15 @@ public class DocumentProcessingService {
             return Mono.empty();
         }
 
-
-
         return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
-            .doOnNext(parsedResult -> {
-                documentStore.save(documentId, contentType, parsedResult);
-                socketNotifier.notifySuccess(documentId);
-            })
-            .doOnError(ex -> {
-                logger.error("Failed to process document {}", documentId, ex);
-                socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
-            }).then();
-    }
-
-    private String detectType(byte[] data) {
-        if (data == null || data.length == 0) {
-            return null;
-        }
-
-        if (data.length >= 4
-                && data[0] == (byte) 0x25
-                && data[1] == (byte) 0x50
-                && data[2] == (byte) 0x44
-                && data[3] == (byte) 0x46) {
-            return "pdf";
-        }
-
-        if (data.length >= 8
-                && data[0] == (byte) 0xD0
-                && data[1] == (byte) 0xCF
-                && data[2] == (byte) 0x11
-                && data[3] == (byte) 0xE0
-                && data[4] == (byte) 0xA1
-                && data[5] == (byte) 0xB1
-                && data[6] == (byte) 0x1A
-                && data[7] == (byte) 0xE1) {
-            return "excel";
-        }
-
-        if (data.length >= 4
-                && data[0] == 'P'
-                && data[1] == 'K'
-                && data[2] == 0x03
-                && data[3] == 0x04) {
-            return "excel";
-        }
-
-        return null;
+                .flatMap(parsedResult ->
+                        documentService.createDocument(new AddDocumentRequest(parsedResult.summary, contentType, documentId))
+                                .doOnNext(savedDocument -> socketNotifierService.notifySuccess(documentId))
+                )
+                .doOnError(ex -> {
+                    logger.error("Failed to process document {}", documentId, ex);
+                    socketNotifierService.notifyFailure(documentId, "Failed to process document " + documentId);
+                })
+                .then();
     }
 }
