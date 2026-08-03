@@ -3,6 +3,7 @@ package com.training.controllers;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.result.ParsedResult;
 import io.micronaut.http.HttpResponse;
+import io.micronaut.http.HttpStatus;
 import io.micronaut.http.annotation.Body;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Post;
@@ -10,6 +11,7 @@ import io.micronaut.serde.ObjectMapper;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 
@@ -22,25 +24,25 @@ public class DocumentParserController {
     private ObjectMapper objectMapper;
 
     @Post
-    HttpResponse<ParsedResult> parse(@Body DocumentParserRequest documentParserRequest) throws IOException {
+    Mono<HttpResponse<ParsedResult>> parse(@Body DocumentParserRequest documentParserRequest) throws IOException {
         logger.debug("Received documentParserRequest {}", objectMapper.writeValueAsString(documentParserRequest));
         if (documentParserRequest.getData() == null ||
                 documentParserRequest.getContentType() == null ||
                 documentParserRequest.getContentType().isEmpty()) {
-            return HttpResponse.badRequest();
+            return Mono.just(HttpResponse.status(HttpStatus.BAD_REQUEST));
         }
 
         if (documentParserRequest.getContentType().equals("pdf")) {
             logger.info("Parsing PDF");
-            return HttpResponse.ok(new ParsedResult("This is a pdf file."));
+            return Mono.just(HttpResponse.ok(new ParsedResult("This is a pdf file.")));
         }
 
         if (documentParserRequest.getContentType().equals("excel")) {
             logger.info("Parsing Excel");
-            return HttpResponse.ok(new ParsedResult("This is a excel file."));
+            return Mono.just(HttpResponse.ok(new ParsedResult("This is an excel file.")));
         }
 
         logger.info("Unsupported content type");
-        return HttpResponse.badRequest(new ParsedResult("Unsupported content type."));
+        return Mono.just(HttpResponse.badRequest(new ParsedResult("Unsupported content type.")));
     }
 }

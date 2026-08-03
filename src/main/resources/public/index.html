@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Processing Test Client</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    form {
+      border: 1px solid #ddd;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
+    .message {
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: 16px;
+    }
+
+    .success {
+      background: #eaf7ea;
+      color: #2e7d32;
+    }
+
+    .error {
+      background: #fdecea;
+      color: #c62828;
+    }
+
+    .info {
+      background: #eef3ff;
+      color: #1e4fbf;
+    }
+
+    input,
+    button {
+      padding: 8px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Document Processing Test Client</h1>
+  <p>This is a simple HTML client for testing document upload processing without any frontend framework.</p>
+
+  <form id="uploadForm">
+    <label for="documentId">Document ID</label><br>
+    <input id="documentId" name="documentId" type="text" placeholder="document id" /><br>
+
+    <label for="file">Document File</label><br>
+    <input id="file" name="file" type="file" /><br>
+
+    <button type="submit">Process Document</button>
+  </form>
+
+  <div id="result" class="message info">Choose a file and submit it to test the processing flow.</div>
+  <script src="app.js"></script>
+</body>
+
+</html>

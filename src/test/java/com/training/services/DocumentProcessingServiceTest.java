@@ -1,12 +1,12 @@
 package com.training.services;
 
-import com.training.client.LambdaParserClient;
+import com.training.client.LambdaParserHttpClient;
 import com.training.data.document.Document;
 import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
-import com.training.messaging.SocketNotifierService;
+import io.micronaut.http.HttpResponse;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -39,16 +38,16 @@ class DocumentProcessingServiceTest {
     private static final byte[] ZIP_SIGNATURE_BYTES = {'P', 'K', 0x03, 0x04};
 
     private DocumentService documentService;
-    private LambdaParserClient lambdaParserClient;
+    private LambdaParserHttpClient lambdaParserHttpClient;
     private SocketNotifierService socketNotifierService;
     private DocumentProcessingService documentProcessingService;
 
     @BeforeEach
     void setUp() {
         documentService = mock(DocumentService.class);
-        lambdaParserClient = mock(LambdaParserClient.class);
+        lambdaParserHttpClient = mock(LambdaParserHttpClient.class);
         socketNotifierService = mock(SocketNotifierService.class);
-        documentProcessingService = new DocumentProcessingService(documentService, lambdaParserClient, socketNotifierService);
+        documentProcessingService = new DocumentProcessingService(documentService, lambdaParserHttpClient, socketNotifierService);
     }
 
     @ParameterizedTest
@@ -58,18 +57,18 @@ class DocumentProcessingServiceTest {
 
         if (expectedType != null) {
             ParsedResult parsedResult = new ParsedResult(expectedType);
-            when(lambdaParserClient.parse(any(DocumentParserRequest.class))).thenReturn(Mono.just(parsedResult));
+            when(lambdaParserHttpClient.parseDocument(any(DocumentParserRequest.class))).thenReturn(Mono.just(HttpResponse.ok(parsedResult)));
             when(documentService.createDocument(any(AddDocumentRequest.class))).thenReturn(Mono.just(mock(Document.class)));
         }
 
         documentProcessingService.processUpload(uploadRequest).block();
 
         if (expectedType == null) {
-            verifyNoInteractions(lambdaParserClient);
+            verifyNoInteractions(lambdaParserHttpClient);
             verifyNoInteractions(socketNotifierService);
             verifyNoInteractions(documentService);
         } else {
-            verify(lambdaParserClient).parse(any(DocumentParserRequest.class));
+            verify(lambdaParserHttpClient).parseDocument(any(DocumentParserRequest.class));
             verify(socketNotifierService).notifySuccess("doc-1");
             verify(documentService).createDocument(any(AddDocumentRequest.class));
         }
@@ -83,7 +82,7 @@ class DocumentProcessingServiceTest {
                 .expectNextCount(0)
                 .verifyComplete();
 
-        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(lambdaParserHttpClient);
         verifyNoInteractions(socketNotifierService);
         verifyNoInteractions(documentService);
     }
@@ -96,7 +95,7 @@ class DocumentProcessingServiceTest {
                 .expectNextCount(0)
                 .verifyComplete();
 
-        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(lambdaParserHttpClient);
         verifyNoInteractions(socketNotifierService);
         verifyNoInteractions(documentService);
     }
@@ -105,14 +104,14 @@ class DocumentProcessingServiceTest {
     void shouldNotifyFailureWhenParserThrowsError() {
         UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
 
-        when(lambdaParserClient.parse(any(DocumentParserRequest.class)))
+        when(lambdaParserHttpClient.parseDocument(any(DocumentParserRequest.class)))
                 .thenReturn(Mono.error(new RuntimeException("simulated parser failure")));
 
         StepVerifier.create(documentProcessingService.processUpload(uploadRequest))
                 .expectError(RuntimeException.class)
                 .verify();
 
-        verify(lambdaParserClient).parse(any(DocumentParserRequest.class));
+        verify(lambdaParserHttpClient).parseDocument(any(DocumentParserRequest.class));
         verify(socketNotifierService).notifyFailure(eq("doc-1"), anyString());
         verifyNoInteractions(documentService);
     }
@@ -122,7 +121,7 @@ class DocumentProcessingServiceTest {
     void shouldReturnEmptyMonoForInvalidRequests(UploadRequest invalidRequest) {
         StepVerifier.create(documentProcessingService.processUpload(invalidRequest)).expectNextCount(0).verifyComplete();
 
-        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(lambdaParserHttpClient);
         verifyNoInteractions(socketNotifierService);
         verifyNoInteractions(documentService);
     }

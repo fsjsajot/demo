@@ -1,14 +1,9 @@
 package com.training.services;
 
-import com.training.client.LambdaParserClient;
+import com.training.client.LambdaParserHttpClient;
 import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
-import com.training.data.result.ParsedResult;
-import com.training.db.DocumentStore;
-import com.training.messaging.SocketNotifier;
-import com.training.messaging.SocketNotifierService;
-import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +11,7 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Objects;
 
 import static com.training.services.ContentTypeService.detectType;
 
@@ -29,16 +25,17 @@ public class DocumentProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
 
+    private LambdaParserHttpClient lambdaParseHttpClient;
+    private DocumentService documentService;
+    private SocketNotifierService socketNotifierService;
 
-    DocumentService documentService;
-    LambdaParserClient lambdaParserClient;
-    SocketNotifierService socketNotifierService;
 
     public DocumentProcessingService(DocumentService documentService,
-            LambdaParserClient lambdaParserClient,
-                                     SocketNotifierService socketNotifierService) {
+                                     LambdaParserHttpClient lambdaParseHttpClient,
+                                     SocketNotifierService socketNotifierService
+                                     ) {
         this.documentService = documentService;
-        this.lambdaParserClient = lambdaParserClient;
+        this.lambdaParseHttpClient = lambdaParseHttpClient;
         this.socketNotifierService = socketNotifierService;
     }
 
@@ -68,9 +65,9 @@ public class DocumentProcessingService {
             return Mono.empty();
         }
 
-        return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
+        return lambdaParseHttpClient.parseDocument(new DocumentParserRequest(data, contentType))
                 .flatMap(parsedResult ->
-                        documentService.createDocument(new AddDocumentRequest(parsedResult.summary, contentType, documentId))
+                        documentService.createDocument(new AddDocumentRequest(Objects.requireNonNull(parsedResult.body()).summary, contentType, documentId))
                                 .doOnNext(savedDocument -> socketNotifierService.notifySuccess(documentId))
                 )
                 .doOnError(ex -> {
