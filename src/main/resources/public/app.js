@@ -55,7 +55,7 @@ webSocket.onmessage = function (msg) {
         result.textContent = data.message || 'Document processed successfully.';
     }
 
-    if (data.topic.includes("fail:")) {
+    if (data.topic.includes("failure:")) {
         result.className = 'message error';
         result.textContent = data.message || 'Upload failed. Check the server logs.';
     }

@@ -1,5 +1,7 @@
 package com.training.services;
 
+import com.training.data.notification.NotificationEvent;
+import com.training.messaging.NotificationEventPublisher;
 import com.training.messaging.SocketNotifier;
 import io.micronaut.websocket.WebSocketBroadcaster;
 import jakarta.inject.Inject;
@@ -13,37 +15,25 @@ import reactor.core.publisher.Flux;
 public class SocketNotifierService implements SocketNotifier {
     private static final Logger logger = LoggerFactory.getLogger(SocketNotifierService.class.getName());
 
-    private final WebSocketBroadcaster broadcaster;
-    private final SocketMessageCreatorService messageCreatorService;
+    private final NotificationEventPublisher eventPublisher;
 
-    public SocketNotifierService(WebSocketBroadcaster broadcaster,  SocketMessageCreatorService messageCreatorService) {
-        this.broadcaster = broadcaster;
-        this.messageCreatorService = messageCreatorService;
+    public SocketNotifierService(NotificationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
     public void notifySuccess(String documentId) {
-        String message = messageCreatorService.createMessage(
+        eventPublisher.publish(new NotificationEvent(
                 "success:file-" + documentId,
-                "Document " + documentId + " has been successfully processed.");
-
-        Flux.from(broadcaster.broadcast(message))
-                .subscribe(
-                        ignored -> {},
-                        ex -> logger.error("Failed to broadcast success message for document {}", documentId, ex)
-                );
+                "Document " + documentId + " has been successfully processed."
+        ));
     }
 
     @Override
     public void notifyFailure(String documentId, String reason) {
-        String message = messageCreatorService.createMessage(
-                "fail:file-" + documentId,
-                "Failed to process document: " + documentId + " Reason: " + reason);
-
-        Flux.from(broadcaster.broadcast(message))
-                .subscribe(
-                        ignored -> {},
-                        ex -> logger.error("Failed to broadcast failure message for document {}", documentId, ex)
-                );
+        eventPublisher.publish(new NotificationEvent(
+                "failure:file-" + documentId,
+                "Failed to process document: " + documentId + " Reason: " + reason
+        ));
     }
 }

@@ -16,10 +16,10 @@
         <appender-ref ref="STDOUT" />
     </logger>
 
-    <!-- Quiet down noisy framework internals if needed -->
     <logger name="io.micronaut" level="INFO" />
     <logger name="io.netty" level="WARN" />
     <logger name="io.micronaut.web.router" level="TRACE"/>
     <logger name="org.mongodb.driver.cluster" level="INFO"/>
     <logger name="org.mongodb.driver" level="DEBUG"/>
+    <logger name="io.micronaut.rabbitmq" level="DEBUG"/>
 </configuration>
