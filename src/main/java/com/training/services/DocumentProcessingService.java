@@ -4,6 +4,7 @@ import com.training.client.LambdaParserHttpClient;
 import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
+import com.training.data.result.ParsedResult;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,10 +67,16 @@ public class DocumentProcessingService {
         }
 
         return lambdaParseHttpClient.parseDocument(new DocumentParserRequest(data, contentType))
-                .flatMap(parsedResult ->
-                        documentService.createDocument(new AddDocumentRequest(Objects.requireNonNull(parsedResult.body()).summary, contentType, documentId))
-                                .doOnNext(savedDocument -> socketNotifierService.notifySuccess(documentId))
-                )
+                .flatMap(parsedResult -> {
+                    ParsedResult result = Objects.requireNonNull(parsedResult.body());
+                    if (!result.isSuccessful()) {
+                        return Mono.error(new RuntimeException("Parser unavailable: " + result.summary));
+                    }
+
+                    return documentService.createDocument(new AddDocumentRequest(result.summary, contentType, documentId))
+                            .doOnNext(savedDocument -> socketNotifierService.notifySuccess(documentId));
+
+                })
                 .doOnError(ex -> {
                     logger.error("Failed to process document {}", documentId, ex);
                     socketNotifierService.notifyFailure(documentId, "Failed to process document " + documentId);

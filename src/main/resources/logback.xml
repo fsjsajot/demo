@@ -22,4 +22,6 @@
     <logger name="org.mongodb.driver.cluster" level="INFO"/>
     <logger name="org.mongodb.driver" level="DEBUG"/>
     <logger name="io.micronaut.rabbitmq" level="DEBUG"/>
+    <logger name="io.micronaut.retry" level="DEBUG"/>
+    <logger name="io.micronaut.http.client" level="DEBUG"/>
 </configuration>
