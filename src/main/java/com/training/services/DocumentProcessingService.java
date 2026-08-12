@@ -13,7 +13,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Objects;
 
-import static com.training.services.ContentTypeService.detectType;
 
 /**
  * Handles an incoming loan document upload: detects the content type, parses
@@ -29,14 +28,19 @@ public class DocumentProcessingService {
     private DocumentService documentService;
     private SocketNotifierService socketNotifierService;
 
+    DocumentStore documentStore;
+    LambdaParserClient lambdaParserClient;
+    SocketNotifier socketNotifier;
+    ContentTypeService contentTypeService;
 
-    public DocumentProcessingService(DocumentService documentService,
-                                     LambdaParserHttpClient lambdaParseHttpClient,
-                                     SocketNotifierService socketNotifierService
-                                     ) {
-        this.documentService = documentService;
-        this.lambdaParseHttpClient = lambdaParseHttpClient;
-        this.socketNotifierService = socketNotifierService;
+    public DocumentProcessingService(DocumentStore documentStore,
+            LambdaParserClient lambdaParserClient,
+                                     SocketNotifier socketNotifier,
+                                     ContentTypeService contentTypeService) {
+        this.documentStore = documentStore;
+        this.lambdaParserClient = lambdaParserClient;
+        this.socketNotifier = socketNotifier;
+        this.contentTypeService = contentTypeService;
     }
 
     public Mono<Void> processUpload(UploadRequest request) {
@@ -51,29 +55,31 @@ public class DocumentProcessingService {
             data = inputStream.readAllBytes();
         } catch (IOException ex) {
             logger.error("Failed to read file stream from document {}", documentId, ex);
+            socketNotifier.notifyFailure(documentId, "Failed to read file stream");
             return Mono.empty();
         }
 
         if (data.length == 0) {
             logger.warn("Rejected upload for document {}: empty file", documentId);
+            socketNotifier.notifyFailure(documentId, "Rejected upload for document" + documentId +": empty file");
             return Mono.empty();
         }
 
-        String contentType = detectType(data);
+        String contentType = contentTypeService.detectType(data);
         if (contentType == null) {
             logger.warn("Unrecognized content type for uploaded document {}", documentId);
+            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document "  + documentId);
             return Mono.empty();
         }
 
         return lambdaParseHttpClient.parseDocument(new DocumentParserRequest(data, contentType))
                 .flatMap(parsedResult ->
-                        documentService.createDocument(new AddDocumentRequest(Objects.requireNonNull(parsedResult.body()).summary, contentType, documentId))
-                                .doOnNext(savedDocument -> socketNotifierService.notifySuccess(documentId))
+                        documentStore.save(new AddDocumentRequest(parsedResult.getSummary(), documentId, contentType))
+                                .doOnNext(savedDocument -> socketNotifier.notifySuccess(documentId))
                 )
                 .doOnError(ex -> {
                     logger.error("Failed to process document {}", documentId, ex);
-                    socketNotifierService.notifyFailure(documentId, "Failed to process document " + documentId);
-                })
-                .then();
+                    socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
+                }).then();
     }
 }

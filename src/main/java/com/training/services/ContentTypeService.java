@@ -1,7 +1,14 @@
 package com.training.services;
 
+import jakarta.inject.Singleton;
+
+@Singleton
 public class ContentTypeService {
-    public static String detectType(byte[] data) {
+
+    public ContentTypeService() {
+    }
+
+    public String detectType(byte[] data) {
         if (data == null || data.length == 0) {
             return null;
         }

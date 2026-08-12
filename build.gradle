@@ -36,6 +36,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
     testImplementation("io.projectreactor:reactor-test")
     implementation("io.micronaut.rabbitmq:micronaut-rabbitmq")
+    runtimeOnly("org.yaml:snakeyaml")
 }
 
 

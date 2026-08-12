@@ -6,7 +6,8 @@ import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
-import io.micronaut.http.HttpResponse;
+import com.training.db.DocumentStore;
+import com.training.messaging.SocketNotifierService;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,17 +38,20 @@ class DocumentProcessingServiceTest {
     private static final byte[] UNKNOWN_BYTES = {0x00, 0x01, 0x02, 0x03};
     private static final byte[] ZIP_SIGNATURE_BYTES = {'P', 'K', 0x03, 0x04};
 
-    private DocumentService documentService;
-    private LambdaParserHttpClient lambdaParserHttpClient;
+    private DocumentStore documentStore;
+    private LambdaParserClient lambdaParserClient;
     private SocketNotifierService socketNotifierService;
     private DocumentProcessingService documentProcessingService;
+    private ContentTypeService contentTypeService;
 
     @BeforeEach
     void setUp() {
-        documentService = mock(DocumentService.class);
-        lambdaParserHttpClient = mock(LambdaParserHttpClient.class);
+        documentStore = mock(DocumentStore.class);
+        lambdaParserClient = mock(LambdaParserClient.class);
         socketNotifierService = mock(SocketNotifierService.class);
-        documentProcessingService = new DocumentProcessingService(documentService, lambdaParserHttpClient, socketNotifierService);
+        contentTypeService = mock(ContentTypeService.class);
+
+        documentProcessingService = new DocumentProcessingService(documentStore, lambdaParserClient, socketNotifierService, contentTypeService);
     }
 
     @ParameterizedTest
@@ -55,22 +59,28 @@ class DocumentProcessingServiceTest {
     void shouldHandleContentTypes(byte[] payload, String expectedType) {
         UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(payload));
 
+        when(contentTypeService.detectType(any(byte[].class))).thenReturn(expectedType);
+
         if (expectedType != null) {
             ParsedResult parsedResult = new ParsedResult(expectedType);
-            when(lambdaParserHttpClient.parseDocument(any(DocumentParserRequest.class))).thenReturn(Mono.just(HttpResponse.ok(parsedResult)));
-            when(documentService.createDocument(any(AddDocumentRequest.class))).thenReturn(Mono.just(mock(Document.class)));
+            when(lambdaParserClient.parse(any(DocumentParserRequest.class))).thenReturn(Mono.just(parsedResult));
+            when(documentStore.save(any(AddDocumentRequest.class))).thenReturn(Mono.just(mock(Document.class)));
         }
 
         documentProcessingService.processUpload(uploadRequest).block();
 
         if (expectedType == null) {
-            verifyNoInteractions(lambdaParserHttpClient);
-            verifyNoInteractions(socketNotifierService);
-            verifyNoInteractions(documentService);
+            verify(socketNotifierService).notifyFailure(
+                    "doc-1",
+                    "Unrecognized content type for uploaded document doc-1"
+            );
+
+            verifyNoInteractions(lambdaParserClient);
+            verifyNoInteractions(documentStore);
         } else {
             verify(lambdaParserHttpClient).parseDocument(any(DocumentParserRequest.class));
             verify(socketNotifierService).notifySuccess("doc-1");
-            verify(documentService).createDocument(any(AddDocumentRequest.class));
+            verify(documentStore).save(any(AddDocumentRequest.class));
         }
     }
 
@@ -82,9 +92,13 @@ class DocumentProcessingServiceTest {
                 .expectNextCount(0)
                 .verifyComplete();
 
-        verifyNoInteractions(lambdaParserHttpClient);
-        verifyNoInteractions(socketNotifierService);
-        verifyNoInteractions(documentService);
+        verify(socketNotifierService).notifyFailure(
+                "doc-1",
+                "Failed to read file stream"
+        );
+
+        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(documentStore);
     }
 
     @Test
@@ -95,25 +109,31 @@ class DocumentProcessingServiceTest {
                 .expectNextCount(0)
                 .verifyComplete();
 
-        verifyNoInteractions(lambdaParserHttpClient);
-        verifyNoInteractions(socketNotifierService);
-        verifyNoInteractions(documentService);
+
+        verify(socketNotifierService).notifyFailure(
+                "doc-1",
+                "Rejected upload for document" + "doc-1: empty file"
+        );
+        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(documentStore);
     }
 
     @Test
     void shouldNotifyFailureWhenParserThrowsError() {
         UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
 
-        when(lambdaParserHttpClient.parseDocument(any(DocumentParserRequest.class)))
+        when(contentTypeService.detectType(any(byte[].class))).thenReturn("pdf");
+
+        when(lambdaParserClient.parse(any(DocumentParserRequest.class)))
                 .thenReturn(Mono.error(new RuntimeException("simulated parser failure")));
 
         StepVerifier.create(documentProcessingService.processUpload(uploadRequest))
                 .expectError(RuntimeException.class)
                 .verify();
 
-        verify(lambdaParserHttpClient).parseDocument(any(DocumentParserRequest.class));
+        verify(lambdaParserClient).parse(any(DocumentParserRequest.class));
         verify(socketNotifierService).notifyFailure(eq("doc-1"), anyString());
-        verifyNoInteractions(documentService);
+        verifyNoInteractions(documentStore);
     }
 
     @ParameterizedTest
@@ -123,7 +143,7 @@ class DocumentProcessingServiceTest {
 
         verifyNoInteractions(lambdaParserHttpClient);
         verifyNoInteractions(socketNotifierService);
-        verifyNoInteractions(documentService);
+        verifyNoInteractions(documentStore);
     }
 
     private static Stream<Arguments> invalidRequestCases() {
