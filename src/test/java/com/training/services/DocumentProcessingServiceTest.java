@@ -42,20 +42,24 @@ class DocumentProcessingServiceTest {
     private LambdaParserClient lambdaParserClient;
     private SocketNotifierService socketNotifierService;
     private DocumentProcessingService documentProcessingService;
+    private ContentTypeService contentTypeService;
 
     @BeforeEach
     void setUp() {
         documentStore = mock(DocumentStore.class);
         lambdaParserClient = mock(LambdaParserClient.class);
         socketNotifierService = mock(SocketNotifierService.class);
+        contentTypeService = mock(ContentTypeService.class);
 
-        documentProcessingService = new DocumentProcessingService(documentStore, lambdaParserClient, socketNotifierService);
+        documentProcessingService = new DocumentProcessingService(documentStore, lambdaParserClient, socketNotifierService, contentTypeService);
     }
 
     @ParameterizedTest
     @MethodSource("contentTypeCases")
     void shouldHandleContentTypes(byte[] payload, String expectedType) {
         UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(payload));
+
+        when(contentTypeService.detectType(any(byte[].class))).thenReturn(expectedType);
 
         if (expectedType != null) {
             ParsedResult parsedResult = new ParsedResult(expectedType);
@@ -117,6 +121,8 @@ class DocumentProcessingServiceTest {
     @Test
     void shouldNotifyFailureWhenParserThrowsError() {
         UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
+
+        when(contentTypeService.detectType(any(byte[].class))).thenReturn("pdf");
 
         when(lambdaParserClient.parse(any(DocumentParserRequest.class)))
                 .thenReturn(Mono.error(new RuntimeException("simulated parser failure")));

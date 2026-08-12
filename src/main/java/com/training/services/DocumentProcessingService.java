@@ -36,11 +36,12 @@ public class DocumentProcessingService {
 
     public DocumentProcessingService(DocumentStore documentStore,
             LambdaParserClient lambdaParserClient,
-                                     SocketNotifier socketNotifier) {
+                                     SocketNotifier socketNotifier,
+                                     ContentTypeService contentTypeService) {
         this.documentStore = documentStore;
         this.lambdaParserClient = lambdaParserClient;
         this.socketNotifier = socketNotifier;
-        this.contentTypeService = new ContentTypeService();
+        this.contentTypeService = contentTypeService;
     }
 
     public Mono<Void> processUpload(UploadRequest request) {
