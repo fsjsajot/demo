@@ -17,7 +17,6 @@ import reactor.core.publisher.Mono;
 import java.io.IOException;
 import java.io.InputStream;
 
-import static com.training.services.ContentTypeService.detectType;
 
 /**
  * Handles an incoming loan document upload: detects the content type, parses
@@ -30,16 +29,18 @@ public class DocumentProcessingService {
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
 
 
-    DocumentService documentService;
+    DocumentStore documentStore;
     LambdaParserClient lambdaParserClient;
-    SocketNotifierService socketNotifierService;
+    SocketNotifier socketNotifier;
+    ContentTypeService contentTypeService;
 
-    public DocumentProcessingService(DocumentService documentService,
+    public DocumentProcessingService(DocumentStore documentStore,
             LambdaParserClient lambdaParserClient,
-                                     SocketNotifierService socketNotifierService) {
-        this.documentService = documentService;
+                                     SocketNotifier socketNotifier) {
+        this.documentStore = documentStore;
         this.lambdaParserClient = lambdaParserClient;
-        this.socketNotifierService = socketNotifierService;
+        this.socketNotifier = socketNotifier;
+        this.contentTypeService = new ContentTypeService();
     }
 
     public Mono<Void> processUpload(UploadRequest request) {
@@ -64,22 +65,21 @@ public class DocumentProcessingService {
             return Mono.empty();
         }
 
-        String contentType = detectType(data);
+        String contentType = contentTypeService.detectType(data);
         if (contentType == null) {
             logger.warn("Unrecognized content type for uploaded document {}", documentId);
-            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document"  + documentId);
+            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document "  + documentId);
             return Mono.empty();
         }
 
         return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
                 .flatMap(parsedResult ->
-                        documentService.createDocument(new AddDocumentRequest(parsedResult.summary, contentType, documentId))
-                                .doOnNext(savedDocument -> socketNotifierService.notifySuccess(documentId))
+                        documentStore.save(new AddDocumentRequest(parsedResult.getSummary(), documentId, contentType))
+                                .doOnNext(savedDocument -> socketNotifier.notifySuccess(documentId))
                 )
                 .doOnError(ex -> {
                     logger.error("Failed to process document {}", documentId, ex);
-                    socketNotifierService.notifyFailure(documentId, "Failed to process document " + documentId);
-                })
-                .then();
+                    socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
+                }).then();
     }
 }
