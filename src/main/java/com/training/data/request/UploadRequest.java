@@ -9,7 +9,7 @@ public class UploadRequest {
     public InputStream getFileStream() { return fileStream; }
     public String getDocumentId() { return documentId; }
 
-    public UploadRequest(InputStream fileStream, String documentId) {
+    public UploadRequest(String documentId, InputStream fileStream) {
         this.fileStream = fileStream;
         this.documentId = documentId;
     }

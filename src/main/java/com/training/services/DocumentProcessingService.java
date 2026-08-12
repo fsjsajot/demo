@@ -72,9 +72,10 @@ public class DocumentProcessingService {
                 documentStore.save(documentId, contentType, parsedResult);
                 socketNotifier.notifySuccess(documentId);
             })
-            .doOnError(ex -> {
-                logger.error("Failed to process document {}", documentId, ex);
-                socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
+            .onErrorResume(ex -> {
+                    logger.error("Failed to process document {}", documentId, ex);
+                    socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
+                    return Mono.empty();
             }).then();
     }
 

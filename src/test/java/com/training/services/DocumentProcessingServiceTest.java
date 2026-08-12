@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,7 +38,7 @@ class DocumentProcessingServiceTest {
 
     @Test
     void shouldProcessPdfUpload() {
-        UploadRequest uploadRequest = new FakeUploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
+        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
 
         documentProcessingService.processUpload(uploadRequest).block();
 
@@ -51,7 +50,7 @@ class DocumentProcessingServiceTest {
 
     @Test
     void shouldProcessExcelUpload() {
-        UploadRequest uploadRequest = new FakeUploadRequest("doc-2", new ByteArrayInputStream(XLS_OLE_BYTES));
+        UploadRequest uploadRequest = new UploadRequest("doc-2", new ByteArrayInputStream(XLS_OLE_BYTES));
 
         documentProcessingService.processUpload(uploadRequest).block();
 
@@ -63,7 +62,7 @@ class DocumentProcessingServiceTest {
 
     @Test
     void shouldIgnoreNullInputStream() {
-        FakeUploadRequest uploadRequest = new FakeUploadRequest("doc-1", null);
+        UploadRequest uploadRequest = new UploadRequest("doc-1", null);
         documentProcessingService.processUpload(uploadRequest).block();
 
         assertNull(fakeLambdaParserClient.lastContentType);
@@ -73,7 +72,7 @@ class DocumentProcessingServiceTest {
 
     @Test
     void shouldDoNothingUnrecognizedFileType() {
-        FakeUploadRequest uploadRequest = new FakeUploadRequest("doc-1", new ByteArrayInputStream(UNKNOWN_BYTES));
+        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(UNKNOWN_BYTES));
         documentProcessingService.processUpload(uploadRequest).block();
 
         assertNull(fakeLambdaParserClient.lastContentType);
@@ -81,25 +80,25 @@ class DocumentProcessingServiceTest {
         assertNull(fakeSocketNotifier.documentId);
     }
 
-    private static class FakeUploadRequest extends UploadRequest {
-        private final String documentId;
-        private final InputStream inputStream;
+    @Test
+    void shouldRejectEmptyFileStream() {
+        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(new byte[0]));
+        documentProcessingService.processUpload(uploadRequest).block();
 
-        public FakeUploadRequest(String documentId, InputStream inputStream) {
-            this.documentId = documentId;
-            this.inputStream = inputStream;
-        }
+        assertNull(fakeLambdaParserClient.lastContentType);
+        assertNull(fakeDocumentStore.savedDocumentId);
+        assertNull(fakeSocketNotifier.documentId);
+    }
 
+    @Test
+    void shouldNotifyFailureOnParserError() {
+        fakeLambdaParserClient.shouldThrowException = true;
+        UploadRequest request = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
 
-        @Override
-        public InputStream getFileStream() {
-            return inputStream;
-        }
+        documentProcessingService.processUpload(request).block();
 
-        @Override
-        public String getDocumentId() {
-            return documentId;
-        }
+        assertEquals("doc-1", fakeSocketNotifier.failedDocumentId);
+        assertNull(fakeSocketNotifier.documentId);
     }
 
     private static class FakeDocumentStore implements DocumentStore {
@@ -126,17 +125,11 @@ class DocumentProcessingServiceTest {
         @Override
         public Mono<ParsedResult> parse(DocumentParserRequest request) {
             if (shouldThrowException) {
-                throw new RuntimeException("Simulated parsing exception error.");
+               return Mono.error(new RuntimeException("Simulated parsing exception error."));
             }
 
-            this.lastContentType = request.contentType;
-            return Mono.just(new ParsedResult(request.contentType));
-        }
-
-        @Override
-        public Mono<ParsedResult> parse(DocumentParserRequest request) {
-            called = true;
-            return Mono.just(new ParsedResult("Sample content"));
+            this.lastContentType = request.getContentType();
+            return Mono.just(new ParsedResult(request.getContentType()));
         }
     }
 
