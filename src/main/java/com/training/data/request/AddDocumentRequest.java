@@ -6,10 +6,10 @@ public class AddDocumentRequest {
     private String contentType;
     private String documentId;
 
-    public AddDocumentRequest(String content, String contentType, String documentId) {
+    public AddDocumentRequest(String content, String documentId,  String contentType) {
+        this.documentId = documentId;
         this.content = content;
         this.contentType = contentType;
-        this.documentId = documentId;
     }
 
     public String getContent() {
