@@ -26,13 +26,16 @@ dependencies {
     implementation("io.projectreactor:reactor-core:3.8.6")
     implementation("io.micronaut.reactor:micronaut-reactor")
     implementation("io.micronaut.reactor:micronaut-reactor-http-client")
-    runtimeOnly("org.yaml:snakeyaml")
+    implementation("io.micronaut.data:micronaut-data-mongodb")
+    implementation("io.micronaut.mongodb:micronaut-mongo-reactive")
+    runtimeOnly("org.mongodb:mongodb-driver-reactivestreams")
     testImplementation("org.junit.jupiter:junit-jupiter-params")
     testImplementation("org.mockito:mockito-core")
     testImplementation("org.mockito:mockito-junit-jupiter")
     testImplementation("org.testcontainers:testcontainers-mongodb:2.0.5")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
     testImplementation("io.projectreactor:reactor-test")
+    runtimeOnly("org.yaml:snakeyaml")
 }
 
 
