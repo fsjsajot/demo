@@ -54,17 +54,20 @@ public class DocumentProcessingService {
             data = inputStream.readAllBytes();
         } catch (IOException ex) {
             logger.error("Failed to read file stream from document {}", documentId, ex);
+            socketNotifier.notifyFailure(documentId, "Failed to read file stream");
             return Mono.empty();
         }
 
         if (data.length == 0) {
             logger.warn("Rejected upload for document {}: empty file", documentId);
+            socketNotifier.notifyFailure(documentId, "Rejected upload for document" + documentId +": empty file");
             return Mono.empty();
         }
 
         String contentType = detectType(data);
         if (contentType == null) {
             logger.warn("Unrecognized content type for uploaded document {}", documentId);
+            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document"  + documentId);
             return Mono.empty();
         }
 
