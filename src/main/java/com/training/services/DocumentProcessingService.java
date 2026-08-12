@@ -64,20 +64,18 @@ public class DocumentProcessingService {
             return;
         }
 
-        try {
-            lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
-                    .doOnNext(parsedResult -> {
-                        documentStore.save(documentId, contentType, parsedResult);
-                        socketNotifier.notifySuccess(documentId);
-                    })
-                    .doOnError(ex -> {
-                        logger.error("Failed to process document {}", documentId, ex);
-                        socketNotifier.notifyFailure(documentId, "Failed to parse document.");
-                    }).subscribe();
-        } catch (Exception ex) {
-            logger.error("Failed to process document {}", documentId, ex);
-            socketNotifier.notifyFailure(documentId, "Failed to parse document.");
-        }
+        lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
+                .doOnNext(parsedResult -> {
+                    documentStore.save(documentId, contentType, parsedResult);
+                    socketNotifier.notifySuccess(documentId);
+                })
+                .subscribe(
+                        parsedResult -> {}, // already handled in doOnNext, or move logic here instead
+                        ex -> {
+                            logger.error("Failed to process document {}", documentId, ex);
+                            socketNotifier.notifyFailure(documentId, "Failed to parse document.");
+                        }
+                );
     }
 
     private String detectType(byte[] data) {
