@@ -1,76 +1,91 @@
 package com.training.services;
 
 import com.training.messaging.NotificationEventPublisher;
+import com.training.messaging.SocketNotifier;
 import io.micronaut.websocket.WebSocketBroadcaster;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 public class SocketNotifierServiceTest {
-    private NotificationEventPublisher eventPublisher;
-    private SocketNotifierService socketNotifierService;
+    private SocketNotifier socketNotifier;
+    private WebSocketBroadcaster webSocketBroadcaster;
+    private SocketMessageCreatorService messageCreatorService;
 
     @BeforeEach
     void setUp() {
-        eventPublisher = mock(NotificationEventPublisher.class);
-        socketNotifierService = new SocketNotifierService(eventPublisher);
+        webSocketBroadcaster = mock(WebSocketBroadcaster.class);
+        messageCreatorService = mock(SocketMessageCreatorService.class);
+
+        socketNotifier = new SocketNotifierService(webSocketBroadcaster, messageCreatorService);
     }
 
     @Test
-    void shouldPublishSuccessEvent() {
+    void shouldBroadcastSuccessMessage() {
         String documentId = "doc-1";
+        String builtMessage = "{\"topic\":\"success:file-doc-1\"}";
 
-        socketNotifierService.notifySuccess(documentId);
+        when(messageCreatorService.createMessage(eq("success:file-" + documentId), anyString()))
+                .thenReturn(builtMessage);
+        when(webSocketBroadcaster.broadcast(builtMessage)).thenReturn(Flux.just(builtMessage));
 
-        verify(eventPublisher).publish(argThat(event ->
-                ("success:file-" + documentId).equals(event.getTopic())  &&
-                event.getMessage().contains(documentId)
-        ));
+        socketNotifier.notifySuccess(documentId);
+
+        verify(messageCreatorService).createMessage(
+                eq("success:file-" + documentId),
+                contains(documentId)
+        );
+        verify(webSocketBroadcaster).broadcast(builtMessage);
     }
 
     @Test
     void shouldBroadcastFailureMessage() {
         String documentId = "doc-2";
         String reason = "parser error";
+        String builtMessage = "{\"topic\":\"failure:file-doc-2\"}";
 
-        socketNotifierService.notifyFailure(documentId, reason);
+        when(messageCreatorService.createMessage(eq("failure:file-" + documentId), anyString()))
+                .thenReturn(builtMessage);
+        when(webSocketBroadcaster.broadcast(builtMessage)).thenReturn(Flux.just(builtMessage));
 
-        verify(eventPublisher).publish(argThat(event ->
-                ("failure:file-" + documentId).equals(event.getTopic()) &&
-                event.getMessage().contains(documentId) &&
-                event.getMessage().contains(reason)
-        ));
+        socketNotifier.notifyFailure(documentId, reason);
+
+        verify(messageCreatorService).createMessage(
+                eq("failure:file-" + documentId),
+                argThat(msg -> msg.contains(documentId) && msg.contains(reason))
+        );
+        verify(webSocketBroadcaster).broadcast(builtMessage);
     }
 
-//    @Test
-//    void shouldNotThrowWhenBroadcastErrors() {
-//        String documentId = "doc-3";
-//        String builtMessage = "{\"topic\":\"success:file-doc-3\"}";
-//
-//        when(messageCreatorService.createMessage(anyString(), anyString())).thenReturn(builtMessage);
-//        when(broadcaster.broadcast(builtMessage))
-//                .thenReturn(Flux.error(new RuntimeException("simulated broadcast failure")));
-//
-//        socketNotifierService.notifySuccess(documentId);
-//
-//        verify(broadcaster).broadcast(builtMessage);
-//    }
-//
-//    @Test
-//    void shouldLogErrorWhenBroadcastFailsForFailureNotification() {
-//        String documentId = "doc-4";
-//        String reason = "parser error";
-//        String builtMessage = "{\"topic\":\"fail:file-doc-4\"}";
-//
-//        when(messageCreatorService.createMessage(anyString(), anyString())).thenReturn(builtMessage);
-//        when(broadcaster.broadcast(builtMessage))
-//                .thenReturn(Flux.error(new RuntimeException("simulated broadcast failure")));
-//
-//        socketNotifierService.notifyFailure(documentId, reason);
-//
-//        verify(broadcaster).broadcast(builtMessage);
-//    }
+    @Test
+    void shouldNotThrowWhenBroadcastErrors() {
+        String documentId = "doc-3";
+        String builtMessage = "{\"topic\":\"success:file-doc-3\"}";
+
+        when(messageCreatorService.createMessage(anyString(), anyString())).thenReturn(builtMessage);
+        when(webSocketBroadcaster.broadcast(builtMessage))
+                .thenReturn(Flux.error(new RuntimeException("simulated broadcast failure")));
+
+        assertDoesNotThrow(() -> socketNotifier.notifySuccess(documentId));
+        verify(webSocketBroadcaster).broadcast(builtMessage);
+    }
+
+    @Test
+    void shouldNotThrowWhenBroadcastErrorsOnFailure() {
+        String documentId = "doc-4";
+        String reason = "parser error";
+        String builtMessage = "{\"topic\":\"failure:file-doc-4\"}";
+
+        when(messageCreatorService.createMessage(anyString(), anyString())).thenReturn(builtMessage);
+        when(webSocketBroadcaster.broadcast(builtMessage))
+                .thenReturn(Flux.error(new RuntimeException("simulated broadcast failure")));
+
+        assertDoesNotThrow(() -> socketNotifier.notifyFailure(documentId, reason));
+
+        verify(webSocketBroadcaster).broadcast(builtMessage);
+    }
 }

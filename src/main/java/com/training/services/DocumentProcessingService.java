@@ -1,9 +1,12 @@
 package com.training.services;
 
-import com.training.client.LambdaParserHttpClient;
+import com.training.client.LambdaParserClient;
 import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
+import com.training.data.result.ParsedResult;
+import com.training.db.DocumentStore;
+import com.training.messaging.SocketNotifier;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,10 +26,6 @@ import java.util.Objects;
 public class DocumentProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
-
-    private LambdaParserHttpClient lambdaParseHttpClient;
-    private DocumentService documentService;
-    private SocketNotifierService socketNotifierService;
 
     private final DocumentStore documentStore;
     private final LambdaParserClient lambdaParserClient;
@@ -72,11 +71,13 @@ public class DocumentProcessingService {
             return Mono.empty();
         }
 
-        return lambdaParseHttpClient.parseDocument(new DocumentParserRequest(data, contentType))
-                .flatMap(parsedResult ->
-                        documentStore.save(new AddDocumentRequest(parsedResult.getSummary(), documentId, contentType))
-                                .doOnNext(savedDocument -> socketNotifier.notifySuccess(documentId))
-                )
+        return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
+                .flatMap(parsedResult -> {
+                    ParsedResult result = Objects.requireNonNull(parsedResult.body());
+
+                    return documentStore.save(new AddDocumentRequest(result.getSummary(), documentId, contentType))
+                            .doOnNext( _ -> socketNotifier.notifySuccess(documentId));
+                })
                 .doOnError(ex -> {
                     logger.error("Failed to process document {}", documentId, ex);
                     socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
