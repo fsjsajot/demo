@@ -29,10 +29,10 @@ public class DocumentProcessingService {
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
 
 
-    DocumentStore documentStore;
-    LambdaParserClient lambdaParserClient;
-    SocketNotifier socketNotifier;
-    ContentTypeService contentTypeService;
+    private final DocumentStore documentStore;
+    private final LambdaParserClient lambdaParserClient;
+    private final SocketNotifier socketNotifier;
+    private final ContentTypeService contentTypeService;
 
     public DocumentProcessingService(DocumentStore documentStore,
             LambdaParserClient lambdaParserClient,
