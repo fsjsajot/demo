@@ -27,6 +27,7 @@ dependencies {
     implementation("io.micronaut.data:micronaut-data-mongodb")
     implementation("io.micronaut.mongodb:micronaut-mongo-reactive")
     runtimeOnly("org.mongodb:mongodb-driver-reactivestreams")
+    runtimeOnly("org.yaml:snakeyaml")
 }
 
 

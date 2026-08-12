@@ -132,6 +132,12 @@ class DocumentProcessingServiceTest {
             this.lastContentType = request.contentType;
             return Mono.just(new ParsedResult(request.contentType));
         }
+
+        @Override
+        public Mono<ParsedResult> parse(DocumentParserRequest request) {
+            called = true;
+            return Mono.just(new ParsedResult("Sample content"));
+        }
     }
 
     private static class FakeSocketNotifier implements SocketNotifier {
