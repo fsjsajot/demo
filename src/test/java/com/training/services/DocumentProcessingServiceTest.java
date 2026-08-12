@@ -66,20 +66,7 @@ class DocumentProcessingServiceTest {
     }
 
     private UploadRequest buildRequest(InputStream fileStream, String documentId) {
-        UploadRequest request = new UploadRequest();
-        setField(request, "fileStream", fileStream);
-        setField(request, "documentId", documentId);
-        return request;
-    }
-
-    private void setField(Object target, String fieldName, Object value) {
-        try {
-            Field field = target.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
-            field.set(target, value);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
+        return new UploadRequest(fileStream, documentId);
     }
 
     private static class RecordingDocumentStore implements DocumentStore {
