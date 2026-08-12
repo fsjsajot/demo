@@ -47,30 +47,36 @@ public class DocumentProcessingService {
             data = inputStream.readAllBytes();
         } catch (IOException ex) {
             logger.error("Failed to read file stream from document {}", documentId, ex);
+            socketNotifier.notifyFailure(documentId, "Failed to read file stream");
             return;
         }
 
         if (data.length == 0) {
             logger.warn("Rejected upload for document {}: empty file", documentId);
+            socketNotifier.notifyFailure(documentId, "Rejected upload for document" + documentId +": empty file");
             return;
         }
 
         String contentType = detectType(data);
         if (contentType == null) {
             logger.warn("Unrecognized content type for uploaded document {}", documentId);
+            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document"  + documentId);
             return;
         }
 
         try {
             lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
-                    .map(parsedResult -> {
+                    .doOnNext(parsedResult -> {
                         documentStore.save(documentId, contentType, parsedResult);
                         socketNotifier.notifySuccess(documentId);
-
-                        return parsedResult;
-                    });
+                    })
+                    .doOnError(ex -> {
+                        logger.error("Failed to process document {}", documentId, ex);
+                        socketNotifier.notifyFailure(documentId, "Failed to parse document.");
+                    }).subscribe();
         } catch (Exception ex) {
             logger.error("Failed to process document {}", documentId, ex);
+            socketNotifier.notifyFailure(documentId, "Failed to parse document.");
         }
     }
 

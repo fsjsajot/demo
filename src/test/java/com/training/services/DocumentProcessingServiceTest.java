@@ -1,11 +1,13 @@
 package com.training.services;
 
 import com.training.client.LambdaParserClient;
+import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
 import com.training.messaging.SocketNotifier;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -96,14 +98,14 @@ class DocumentProcessingServiceTest {
     private static class RecordingLambdaParserClient implements LambdaParserClient {
         private boolean called;
 
-        @Override
-        public ParsedResult parse(byte[] data, String contentType) {
-            called = true;
-            return new ParsedResult();
-        }
-
         boolean wasCalled() {
             return called;
+        }
+
+        @Override
+        public Mono<ParsedResult> parse(DocumentParserRequest request) {
+            called = true;
+            return Mono.just(new ParsedResult("Sample content"));
         }
     }
 
@@ -117,6 +119,7 @@ class DocumentProcessingServiceTest {
 
         @Override
         public void notifyFailure(String documentId, String reason) {
+            successNotified = false;
         }
 
         boolean successNotified() {
