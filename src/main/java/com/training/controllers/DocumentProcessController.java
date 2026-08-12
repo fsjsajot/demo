@@ -25,25 +25,21 @@ public class DocumentProcessController {
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessController.class);
 
 
-    private DocumentProcessingService documentProcessingService;
-    private WebSocketBroadcaster broadcaster;
-    private SocketMessageCreatorService messageCreatorService;
+    private final DocumentProcessingService documentProcessingService;
 
-    public DocumentProcessController(DocumentProcessingService documentProcessingService, WebSocketBroadcaster broadcaster, SocketMessageCreatorService messageCreatorService) {
+    public DocumentProcessController(DocumentProcessingService documentProcessingService) {
         this.documentProcessingService = documentProcessingService;
-        this.broadcaster = broadcaster;
-        this.messageCreatorService = messageCreatorService;
     }
 
     @Post(value = "/", consumes = MediaType.MULTIPART_FORM_DATA)
     public Mono<HttpResponse<String>> processDocument(CompletedFileUpload file, String documentId) {
+        if (file == null || documentId == null || documentId.isBlank()) {
+            return Mono.just(HttpResponse.badRequest("Invalid request."));
+        }
+
         logger.debug("Processing file upload");
         logger.debug("Document ID: {}", documentId);
         logger.debug("File name: {}", file.getFilename());
-
-        if (documentId.isEmpty()) {
-            return Mono.just(HttpResponse.badRequest("Invalid request."));
-        }
 
         UploadRequest uploadRequest;
 
