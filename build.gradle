@@ -24,7 +24,7 @@ dependencies {
     implementation("io.projectreactor:reactor-core:3.8.6")
     implementation("io.micronaut.reactor:micronaut-reactor")
     implementation("io.micronaut.reactor:micronaut-reactor-http-client")
-
+    runtimeOnly("org.yaml:snakeyaml")
 }
 
 
