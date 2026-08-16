@@ -1,54 +1,112 @@
 package com.training.messaging;
 
-import com.training.data.notification.NotificationEvent;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
 import com.training.services.SocketMessageCreatorService;
-import io.micronaut.websocket.WebSocketBroadcaster;
+import io.micronaut.rabbitmq.bind.RabbitAcknowledgement;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Flux;
 
-import static org.mockito.ArgumentMatchers.anyString;
+import java.io.IOException;
+import java.util.Map;
+
 import static org.mockito.Mockito.*;
 
 class NotificationEventConsumerTest {
 
-    private WebSocketBroadcaster broadcaster;
     private SocketMessageCreatorService messageCreatorService;
     private NotificationEventConsumer consumer;
+    private RabbitAcknowledgement acknowledgement;
+    private Connection connection;
+    private Channel channel;
+
+    private static final int MAX_RETRIES = 3;
 
     @BeforeEach
-    void setUp() {
-        broadcaster = mock(WebSocketBroadcaster.class);
+    void setUp() throws IOException {
         messageCreatorService = mock(SocketMessageCreatorService.class);
-        consumer = new NotificationEventConsumer(broadcaster, messageCreatorService);
+        acknowledgement = mock(RabbitAcknowledgement.class);
+        connection = mock(Connection.class);
+        channel = mock(Channel.class);
+
+        consumer = new NotificationEventConsumer(messageCreatorService, connection);
+
+        when(connection.createChannel()).thenReturn(channel);
     }
 
     @Test
-    void shouldBroadcastMessageBuiltFromEvent() {
-        NotificationEvent event = new NotificationEvent("success:file-doc-1", "Document doc-1 processed.");
-        String builtJson = "{\"topic\":\"success:file-doc-1\",\"message\":\"...\"}";
+    void shouldCreateMessageFromEvent() {
+        Map<String, Object> payload = Map.of("documentId", "file-doc-1",
+                "summary", "Document doc-1 processed.",
+                "successful", true);
+        String builtJson = "{\"successful\": true, \"documentId\":\"file-doc-1\",\"summary\":\"Document doc-1 processed.\"}";
 
         when(messageCreatorService.createMessage("success:file-doc-1", "Document doc-1 processed."))
                 .thenReturn(builtJson);
-        when(broadcaster.broadcast(builtJson)).thenReturn(Flux.just(builtJson));
 
-        consumer.onNotificationEvent(event);
+        consumer.onNotificationEvent(payload, null, acknowledgement);
 
         verify(messageCreatorService).createMessage("success:file-doc-1", "Document doc-1 processed.");
-        verify(broadcaster).broadcast(builtJson);
+        verify(acknowledgement).ack();
     }
 
     @Test
-    void shouldNotThrowWhenBroadcastFails() {
-        NotificationEvent event = new NotificationEvent("failure:file-doc-2", "Failed to process.");
-        String builtJson = "{\"topic\":\"failure:file-doc-2\"}";
+    void shouldRequeueOnMissingSuccessfulField() {
+        Map<String, Object> payload = Map.of("summary", "content", "documentId", "doc-1");
 
-        when(messageCreatorService.createMessage(anyString(), anyString())).thenReturn(builtJson);
-        when(broadcaster.broadcast(builtJson))
-                .thenReturn(Flux.error(new RuntimeException("simulated broadcast failure")));
+        consumer.onNotificationEvent(payload, 0, acknowledgement);
 
-        consumer.onNotificationEvent(event);
+        verify(messageCreatorService, never()).createMessage(anyString(), anyString());
+        verify(acknowledgement).ack();
+    }
 
-        verify(broadcaster).broadcast(builtJson);
+    @Test
+    void shouldRequeueOnNullSummary() {
+        Map<String, Object> payload = Map.of( "message", "doc-1 processed.", "successful", true);
+
+        consumer.onNotificationEvent(payload, 0, acknowledgement);
+
+        verify(messageCreatorService, never()).createMessage(anyString(), anyString());
+        verify(acknowledgement).ack();
+    }
+
+    @Test
+    void shouldRequeueOnNullDocumentId() {
+        Map<String, Object> payload = Map.of( "summary", "Document doc-1 is processed.", "successful", true);
+
+        consumer.onNotificationEvent(payload, 0, acknowledgement);
+
+        verify(messageCreatorService, never()).createMessage(anyString(), anyString());
+        verify(acknowledgement).ack();
+    }
+
+    @Test
+    void shouldRequeueOnInvalidFieldType() {
+        Map<String, Object> payload = Map.of( "documentId", "file-doc-1",
+                "summary", "Document doc-1 is processed.",
+                "successful", "test");
+
+
+        consumer.onNotificationEvent(payload, 0, acknowledgement);
+
+        verify(messageCreatorService, never()).createMessage(anyString(), anyString());
+        verify(acknowledgement).ack();
+    }
+
+    @Test
+    void shouldRetryThenDeadLetterAfterMaxRetries() {
+        Map<String, Object> payload = Map.of( "documentId", "file-doc-1",
+                "summary", "Document doc-1 is processed.",
+                "successful", "test");
+
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            consumer.onNotificationEvent(payload, attempt, acknowledgement);
+        }
+
+        verify(acknowledgement, times(MAX_RETRIES)).ack();
+        verify(acknowledgement, never()).nack(anyBoolean(), anyBoolean());
+
+        consumer.onNotificationEvent(payload, MAX_RETRIES, acknowledgement);
+        verify(acknowledgement).nack(false, false);
     }
 }

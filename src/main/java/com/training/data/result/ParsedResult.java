@@ -4,6 +4,7 @@ package com.training.data.result;
 public class ParsedResult {
     public String summary;
     public boolean successful;
+    public String documentId;
 
     public ParsedResult(String summary) {
         this.summary = summary;
@@ -12,6 +13,12 @@ public class ParsedResult {
     public ParsedResult(String summary, boolean successful) {
         this.summary = summary;
         this.successful = successful;
+    }
+
+    public ParsedResult(String summary, boolean successful, String documentId) {
+        this.summary = summary;
+        this.successful = successful;
+        this.documentId = documentId;
     }
 
     public String getSummary() { return summary; }

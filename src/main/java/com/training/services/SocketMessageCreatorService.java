@@ -30,4 +30,13 @@ public class SocketMessageCreatorService {
             return null;
         }
     }
+
+    public byte[] toJsonBytes(Map<String, Object> messageMap) {
+        try {
+            logger.debug("Creating JSON bytes for message: {}", messageMap);
+            return objectMapper.writeValueAsBytes(messageMap);
+        } catch (IOException ex) {
+            throw new RuntimeException("Failed to serialize message to JSON bytes", ex);
+        }
+    }
 }
