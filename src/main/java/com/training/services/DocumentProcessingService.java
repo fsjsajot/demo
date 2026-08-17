@@ -7,8 +7,6 @@ import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
 import com.training.messaging.SocketNotifier;
-import com.training.messaging.SocketNotifierService;
-import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +14,7 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Objects;
 
 
 /**
@@ -27,7 +26,6 @@ import java.io.InputStream;
 public class DocumentProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
-
 
     private final DocumentStore documentStore;
     private final LambdaParserClient lambdaParserClient;
@@ -74,10 +72,12 @@ public class DocumentProcessingService {
         }
 
         return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
-                .flatMap(parsedResult ->
-                        documentStore.save(new AddDocumentRequest(parsedResult.getSummary(), documentId, contentType))
-                                .doOnNext(savedDocument -> socketNotifier.notifySuccess(documentId))
-                )
+                .flatMap(parsedResult -> {
+                    ParsedResult result = Objects.requireNonNull(parsedResult.body());
+
+                    return documentStore.save(new AddDocumentRequest(result.getSummary(), documentId, contentType))
+                            .doOnNext( _ -> socketNotifier.notifySuccess(documentId));
+                })
                 .doOnError(ex -> {
                     logger.error("Failed to process document {}", documentId, ex);
                     socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);

@@ -8,9 +8,9 @@ import io.micronaut.http.annotation.Post;
 import io.micronaut.http.client.annotation.Client;
 import reactor.core.publisher.Mono;
 
-@Client("${lambda.parser.url}")
-public interface LambdaParserClient {
+@Client("/document-parser")
+public interface LambdaParserHttpClient {
 
     @Post
-    Mono<HttpResponse<ParsedResult>> parse(@Body DocumentParserRequest documentParserRequest);
+    Mono<HttpResponse<ParsedResult>> parseDocument(@Body DocumentParserRequest documentParserRequest);
 }

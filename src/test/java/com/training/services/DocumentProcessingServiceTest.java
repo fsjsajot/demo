@@ -7,7 +7,8 @@ import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
-import com.training.messaging.SocketNotifierService;
+import com.training.messaging.SocketNotifier;
+import io.micronaut.http.HttpResponse;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,7 @@ class DocumentProcessingServiceTest {
 
     private DocumentStore documentStore;
     private LambdaParserClient lambdaParserClient;
-    private SocketNotifierService socketNotifierService;
+    private SocketNotifier socketNotifier;
     private DocumentProcessingService documentProcessingService;
     private ContentTypeService contentTypeService;
 
@@ -48,10 +49,10 @@ class DocumentProcessingServiceTest {
     void setUp() {
         documentStore = mock(DocumentStore.class);
         lambdaParserClient = mock(LambdaParserClient.class);
-        socketNotifierService = mock(SocketNotifierService.class);
+        socketNotifier = mock(SocketNotifier.class);
         contentTypeService = mock(ContentTypeService.class);
 
-        documentProcessingService = new DocumentProcessingService(documentStore, lambdaParserClient, socketNotifierService, contentTypeService);
+        documentProcessingService = new DocumentProcessingService(documentStore, lambdaParserClient, socketNotifier, contentTypeService);
     }
 
     @ParameterizedTest
@@ -63,14 +64,14 @@ class DocumentProcessingServiceTest {
 
         if (expectedType != null) {
             ParsedResult parsedResult = new ParsedResult(expectedType);
-            when(lambdaParserClient.parse(any(DocumentParserRequest.class))).thenReturn(Mono.just(parsedResult));
+            when(lambdaParserClient.parse(any(DocumentParserRequest.class))).thenReturn(Mono.just(HttpResponse.ok(parsedResult)));
             when(documentStore.save(any(AddDocumentRequest.class))).thenReturn(Mono.just(mock(Document.class)));
         }
 
         documentProcessingService.processUpload(uploadRequest).block();
 
         if (expectedType == null) {
-            verify(socketNotifierService).notifyFailure(
+            verify(socketNotifier).notifyFailure(
                     "doc-1",
                     "Unrecognized content type for uploaded document doc-1"
             );
@@ -79,7 +80,7 @@ class DocumentProcessingServiceTest {
             verifyNoInteractions(documentStore);
         } else {
             verify(lambdaParserClient).parse(any(DocumentParserRequest.class));
-            verify(socketNotifierService).notifySuccess("doc-1");
+            verify(socketNotifier).notifySuccess("doc-1");
             verify(documentStore).save(any(AddDocumentRequest.class));
         }
     }
@@ -92,7 +93,7 @@ class DocumentProcessingServiceTest {
                 .expectNextCount(0)
                 .verifyComplete();
 
-        verify(socketNotifierService).notifyFailure(
+        verify(socketNotifier).notifyFailure(
                 "doc-1",
                 "Failed to read file stream"
         );
@@ -110,7 +111,7 @@ class DocumentProcessingServiceTest {
                 .verifyComplete();
 
 
-        verify(socketNotifierService).notifyFailure(
+        verify(socketNotifier).notifyFailure(
                 "doc-1",
                 "Rejected upload for document" + "doc-1: empty file"
         );
@@ -132,7 +133,7 @@ class DocumentProcessingServiceTest {
                 .verify();
 
         verify(lambdaParserClient).parse(any(DocumentParserRequest.class));
-        verify(socketNotifierService).notifyFailure(eq("doc-1"), anyString());
+        verify(socketNotifier).notifyFailure(eq("doc-1"), anyString());
         verifyNoInteractions(documentStore);
     }
 
@@ -142,7 +143,7 @@ class DocumentProcessingServiceTest {
         StepVerifier.create(documentProcessingService.processUpload(invalidRequest)).expectNextCount(0).verifyComplete();
 
         verifyNoInteractions(lambdaParserClient);
-        verifyNoInteractions(socketNotifierService);
+        verifyNoInteractions(socketNotifier);
         verifyNoInteractions(documentStore);
     }
 
