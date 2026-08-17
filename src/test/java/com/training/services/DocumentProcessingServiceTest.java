@@ -6,111 +6,147 @@ import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
 import com.training.messaging.SocketNotifier;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.lang.reflect.Field;
-import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.*;
 
 class DocumentProcessingServiceTest {
 
-    @Test
-    void shouldIgnoreNullRequest() throws IOException {
-        RecordingDocumentStore documentStore = new RecordingDocumentStore();
-        RecordingLambdaParserClient parserClient = new RecordingLambdaParserClient();
-        RecordingSocketNotifier socketNotifier = new RecordingSocketNotifier();
-        DocumentProcessingService service = new DocumentProcessingService(documentStore, parserClient, socketNotifier);
+    private static final byte[] PDF_BYTES = {0x25, 0x50, 0x44, 0x46, 0x01, 0x02};
+    private static final byte[] XLS_OLE_BYTES = {
+            (byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0,
+            (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1, 0x00
+    };
+    private static final byte[] UNKNOWN_BYTES = {0x00, 0x01, 0x02, 0x03};
 
-        service.processUpload(null);
+    private FakeDocumentStore fakeDocumentStore;
+    private FakeLambdaParserClient fakeLambdaParserClient;
+    private FakeSocketNotifier fakeSocketNotifier;
+    private DocumentProcessingService documentProcessingService;
 
-        assertFalse(parserClient.wasCalled());
-        assertFalse(documentStore.wasCalled());
-        assertFalse(socketNotifier.successNotified());
+    @BeforeEach
+    void setup() {
+        fakeDocumentStore = new FakeDocumentStore();
+        fakeLambdaParserClient = new FakeLambdaParserClient();
+        fakeSocketNotifier = new FakeSocketNotifier();
+        documentProcessingService = new DocumentProcessingService(fakeDocumentStore, fakeLambdaParserClient, fakeSocketNotifier);
     }
 
     @Test
-    void shouldIgnoreRequestWithoutFileStream() throws IOException {
-        RecordingDocumentStore documentStore = new RecordingDocumentStore();
-        RecordingLambdaParserClient parserClient = new RecordingLambdaParserClient();
-        RecordingSocketNotifier socketNotifier = new RecordingSocketNotifier();
-        DocumentProcessingService service = new DocumentProcessingService(documentStore, parserClient, socketNotifier);
+    void shouldProcessPdfUpload() {
+        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
 
-        UploadRequest request = buildRequest(null, "doc-1");
+        documentProcessingService.processUpload(uploadRequest).block();
 
-        service.processUpload(request);
-
-        assertFalse(parserClient.wasCalled());
-        assertFalse(documentStore.wasCalled());
-        assertFalse(socketNotifier.successNotified());
+        assertEquals("pdf", fakeLambdaParserClient.lastContentType);
+        assertEquals("doc-1", fakeDocumentStore.savedDocumentId);
+        assertEquals("pdf", fakeDocumentStore.savedContentType);
+        assertEquals("doc-1", fakeSocketNotifier.documentId);
     }
 
     @Test
-    void shouldIgnoreRequestWithoutDocumentId() throws IOException {
-        RecordingDocumentStore documentStore = new RecordingDocumentStore();
-        RecordingLambdaParserClient parserClient = new RecordingLambdaParserClient();
-        RecordingSocketNotifier socketNotifier = new RecordingSocketNotifier();
-        DocumentProcessingService service = new DocumentProcessingService(documentStore, parserClient, socketNotifier);
+    void shouldProcessExcelUpload() {
+        UploadRequest uploadRequest = new UploadRequest("doc-2", new ByteArrayInputStream(XLS_OLE_BYTES));
 
-        UploadRequest request = buildRequest(new ByteArrayInputStream("%PDF".getBytes(StandardCharsets.ISO_8859_1)), null);
+        documentProcessingService.processUpload(uploadRequest).block();
 
-        service.processUpload(request);
-
-        assertFalse(parserClient.wasCalled());
-        assertFalse(documentStore.wasCalled());
-        assertFalse(socketNotifier.successNotified());
+        assertEquals("excel", fakeLambdaParserClient.lastContentType);
+        assertEquals("doc-2", fakeDocumentStore.savedDocumentId);
+        assertEquals("excel", fakeDocumentStore.savedContentType);
+        assertEquals("doc-2", fakeSocketNotifier.documentId);
     }
 
-    private UploadRequest buildRequest(InputStream fileStream, String documentId) {
-        return new UploadRequest(fileStream, documentId);
+    @Test
+    void shouldIgnoreNullInputStream() {
+        UploadRequest uploadRequest = new UploadRequest("doc-1", null);
+        documentProcessingService.processUpload(uploadRequest).block();
+
+        assertNull(fakeLambdaParserClient.lastContentType);
+        assertNull(fakeDocumentStore.savedDocumentId);
+        assertNull(fakeSocketNotifier.documentId);
     }
 
-    private static class RecordingDocumentStore implements DocumentStore {
-        private boolean called;
+    @Test
+    void shouldDoNothingUnrecognizedFileType() {
+        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(UNKNOWN_BYTES));
+        documentProcessingService.processUpload(uploadRequest).block();
+
+        assertNull(fakeLambdaParserClient.lastContentType);
+        assertNull(fakeDocumentStore.savedDocumentId);
+        assertNull(fakeSocketNotifier.documentId);
+    }
+
+    @Test
+    void shouldRejectEmptyFileStream() {
+        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(new byte[0]));
+        documentProcessingService.processUpload(uploadRequest).block();
+
+        assertNull(fakeLambdaParserClient.lastContentType);
+        assertNull(fakeDocumentStore.savedDocumentId);
+        assertNull(fakeSocketNotifier.documentId);
+    }
+
+    @Test
+    void shouldNotifyFailureOnParserError() {
+        fakeLambdaParserClient.shouldThrowException = true;
+        UploadRequest request = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
+
+        documentProcessingService.processUpload(request).block();
+
+        assertEquals("doc-1", fakeSocketNotifier.failedDocumentId);
+        assertNull(fakeSocketNotifier.documentId);
+    }
+
+    private static class FakeDocumentStore implements DocumentStore {
+        String savedDocumentId;
+        String savedContentType;
+        boolean shouldThrowException;
+
 
         @Override
         public void save(String documentId, String contentType, ParsedResult result) {
-            called = true;
-        }
+            if (shouldThrowException) {
+                throw new RuntimeException("Simulated save failure.");
+            }
 
-        boolean wasCalled() {
-            return called;
+            this.savedDocumentId = documentId;
+            this.savedContentType = contentType;
         }
     }
 
-    private static class RecordingLambdaParserClient implements LambdaParserClient {
-        private boolean called;
-
-        boolean wasCalled() {
-            return called;
-        }
+    private static class FakeLambdaParserClient implements LambdaParserClient {
+        String lastContentType;
+        boolean shouldThrowException;
 
         @Override
         public Mono<ParsedResult> parse(DocumentParserRequest request) {
-            called = true;
-            return Mono.just(new ParsedResult("Sample content"));
+            if (shouldThrowException) {
+               return Mono.error(new RuntimeException("Simulated parsing exception error."));
+            }
+
+            this.lastContentType = request.getContentType();
+            return Mono.just(new ParsedResult(request.getContentType()));
         }
     }
 
-    private static class RecordingSocketNotifier implements SocketNotifier {
-        private boolean successNotified;
+    private static class FakeSocketNotifier implements SocketNotifier {
+        String documentId;
+        String failedDocumentId;
+        String failedReason;
 
         @Override
         public void notifySuccess(String documentId) {
-            successNotified = true;
+            this.documentId = documentId;
         }
 
         @Override
         public void notifyFailure(String documentId, String reason) {
-            successNotified = false;
-        }
-
-        boolean successNotified() {
-            return successNotified;
+            this.failedDocumentId = documentId;
+            this.failedReason = reason;
         }
     }
 }

@@ -9,6 +9,7 @@ import com.training.messaging.SocketNotifier;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -35,9 +36,9 @@ public class DocumentProcessingService {
         this.socketNotifier = socketNotifier;
     }
 
-    public void processUpload(UploadRequest request) {
+    public Mono<Void> processUpload(UploadRequest request) {
         if (request == null || request.getFileStream() == null || request.getDocumentId() == null || request.getDocumentId().isBlank()) {
-            return;
+            return Mono.empty();
         }
 
         String documentId = request.getDocumentId();
@@ -48,34 +49,34 @@ public class DocumentProcessingService {
         } catch (IOException ex) {
             logger.error("Failed to read file stream from document {}", documentId, ex);
             socketNotifier.notifyFailure(documentId, "Failed to read file stream");
-            return;
+            return Mono.empty();
         }
 
         if (data.length == 0) {
             logger.warn("Rejected upload for document {}: empty file", documentId);
             socketNotifier.notifyFailure(documentId, "Rejected upload for document" + documentId +": empty file");
-            return;
+            return Mono.empty();
         }
 
         String contentType = detectType(data);
         if (contentType == null) {
             logger.warn("Unrecognized content type for uploaded document {}", documentId);
             socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document"  + documentId);
-            return;
+            return Mono.empty();
         }
 
-        lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
-                .doOnNext(parsedResult -> {
-                    documentStore.save(documentId, contentType, parsedResult);
-                    socketNotifier.notifySuccess(documentId);
-                })
-                .subscribe(
-                        parsedResult -> {}, // already handled in doOnNext, or move logic here instead
-                        ex -> {
-                            logger.error("Failed to process document {}", documentId, ex);
-                            socketNotifier.notifyFailure(documentId, "Failed to parse document.");
-                        }
-                );
+
+
+        return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
+            .doOnNext(parsedResult -> {
+                documentStore.save(documentId, contentType, parsedResult);
+                socketNotifier.notifySuccess(documentId);
+            })
+            .onErrorResume(ex -> {
+                    logger.error("Failed to process document {}", documentId, ex);
+                    socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
+                    return Mono.empty();
+            }).then();
     }
 
     private String detectType(byte[] data) {
