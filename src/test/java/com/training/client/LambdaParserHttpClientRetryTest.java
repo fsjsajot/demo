@@ -55,6 +55,7 @@ public class LambdaParserHttpClientRetryTest {
 
         HttpResponse<?> response = lambdaParserClient.parse(new DocumentParserRequest(new byte[]{1}, "pdf")).block();
 
+        // 1 initial + 3 retries = 4 total calls before fallback engages
         verify(4, postRequestedFor(urlEqualTo("/document-parser")));
 
         assertNotNull(response);
