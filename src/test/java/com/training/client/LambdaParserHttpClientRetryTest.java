@@ -14,8 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class LambdaParserHttpClientRetryTest {
 
@@ -41,8 +40,7 @@ public class LambdaParserHttpClientRetryTest {
 
     @Test
     void fallbackBeanShouldBeRegistered() {
-        boolean hasFallback = applicationContext.containsBean(LambdaParserHttpClientFallback.class);
-        System.out.println("Fallback bean registered: " + hasFallback);
+        assertTrue(applicationContext.containsBean(LambdaParserHttpClientFallback.class));
     }
 
     @AfterEach
@@ -64,6 +62,6 @@ public class LambdaParserHttpClientRetryTest {
         var body = (com.training.data.result.ParsedResult) response.body();
 
         assertNotNull(body);
-        assertFalse(body.successful);
+        assertFalse(body.isSuccessful());
     }
 }
