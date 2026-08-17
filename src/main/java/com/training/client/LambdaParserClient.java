@@ -8,7 +8,7 @@ import io.micronaut.http.annotation.Post;
 import io.micronaut.http.client.annotation.Client;
 import reactor.core.publisher.Mono;
 
-@Client("${lambda.parser.url}")
+@Client(value = "${lambda.parser.url}", id = "document-parser")
 public interface LambdaParserClient {
 
     @Post

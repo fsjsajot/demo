@@ -1,3 +1,10 @@
 lambda:
   parser:
     url: http://localhost:8080/document-parser
+
+micronaut:
+  http:
+    services:
+      document-parser:
+        connect-timeout: 5s
+        read-timeout: 10s
