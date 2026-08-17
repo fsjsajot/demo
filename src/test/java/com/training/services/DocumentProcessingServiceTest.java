@@ -1,18 +1,32 @@
 package com.training.services;
 
 import com.training.client.LambdaParserClient;
+import com.training.data.document.Document;
+import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
-import com.training.messaging.SocketNotifier;
+import com.training.messaging.SocketNotifierService;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class DocumentProcessingServiceTest {
 
@@ -22,131 +36,144 @@ class DocumentProcessingServiceTest {
             (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1, 0x00
     };
     private static final byte[] UNKNOWN_BYTES = {0x00, 0x01, 0x02, 0x03};
+    private static final byte[] ZIP_SIGNATURE_BYTES = {'P', 'K', 0x03, 0x04};
 
-    private FakeDocumentStore fakeDocumentStore;
-    private FakeLambdaParserClient fakeLambdaParserClient;
-    private FakeSocketNotifier fakeSocketNotifier;
+    private DocumentStore documentStore;
+    private LambdaParserClient lambdaParserClient;
+    private SocketNotifierService socketNotifierService;
     private DocumentProcessingService documentProcessingService;
+    private ContentTypeService contentTypeService;
 
     @BeforeEach
-    void setup() {
-        fakeDocumentStore = new FakeDocumentStore();
-        fakeLambdaParserClient = new FakeLambdaParserClient();
-        fakeSocketNotifier = new FakeSocketNotifier();
-        documentProcessingService = new DocumentProcessingService(fakeDocumentStore, fakeLambdaParserClient, fakeSocketNotifier);
+    void setUp() {
+        documentStore = mock(DocumentStore.class);
+        lambdaParserClient = mock(LambdaParserClient.class);
+        socketNotifierService = mock(SocketNotifierService.class);
+        contentTypeService = mock(ContentTypeService.class);
+
+        documentProcessingService = new DocumentProcessingService(documentStore, lambdaParserClient, socketNotifierService, contentTypeService);
+    }
+
+    @ParameterizedTest
+    @MethodSource("contentTypeCases")
+    void shouldHandleContentTypes(byte[] payload, String expectedType) {
+        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(payload));
+
+        when(contentTypeService.detectType(any(byte[].class))).thenReturn(expectedType);
+
+        if (expectedType != null) {
+            ParsedResult parsedResult = new ParsedResult(expectedType);
+            when(lambdaParserClient.parse(any(DocumentParserRequest.class))).thenReturn(Mono.just(parsedResult));
+            when(documentStore.save(any(AddDocumentRequest.class))).thenReturn(Mono.just(mock(Document.class)));
+        }
+
+        documentProcessingService.processUpload(uploadRequest).block();
+
+        if (expectedType == null) {
+            verify(socketNotifierService).notifyFailure(
+                    "doc-1",
+                    "Unrecognized content type for uploaded document doc-1"
+            );
+
+            verifyNoInteractions(lambdaParserClient);
+            verifyNoInteractions(documentStore);
+        } else {
+            verify(lambdaParserClient).parse(any(DocumentParserRequest.class));
+            verify(socketNotifierService).notifySuccess("doc-1");
+            verify(documentStore).save(any(AddDocumentRequest.class));
+        }
     }
 
     @Test
-    void shouldProcessPdfUpload() {
+    void shouldReturnEmptyMonoWhenFileStreamThrowsIOException() {
+        UploadRequest invalidRequest = new UploadRequest("doc-1", new ThrowingInputStream());
+
+        StepVerifier.create(documentProcessingService.processUpload(invalidRequest))
+                .expectNextCount(0)
+                .verifyComplete();
+
+        verify(socketNotifierService).notifyFailure(
+                "doc-1",
+                "Failed to read file stream"
+        );
+
+        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(documentStore);
+    }
+
+    @Test
+    void shouldReturnEmptyMonoWhenFileIsEmpty() {
+        UploadRequest invalidRequest = new UploadRequest("doc-1", new ByteArrayInputStream(new byte[0]));
+
+        StepVerifier.create(documentProcessingService.processUpload(invalidRequest))
+                .expectNextCount(0)
+                .verifyComplete();
+
+
+        verify(socketNotifierService).notifyFailure(
+                "doc-1",
+                "Rejected upload for document" + "doc-1: empty file"
+        );
+        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(documentStore);
+    }
+
+    @Test
+    void shouldNotifyFailureWhenParserThrowsError() {
         UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
 
-        documentProcessingService.processUpload(uploadRequest).block();
+        when(contentTypeService.detectType(any(byte[].class))).thenReturn("pdf");
 
-        assertEquals("pdf", fakeLambdaParserClient.lastContentType);
-        assertEquals("doc-1", fakeDocumentStore.savedDocumentId);
-        assertEquals("pdf", fakeDocumentStore.savedContentType);
-        assertEquals("doc-1", fakeSocketNotifier.documentId);
+        when(lambdaParserClient.parse(any(DocumentParserRequest.class)))
+                .thenReturn(Mono.error(new RuntimeException("simulated parser failure")));
+
+        StepVerifier.create(documentProcessingService.processUpload(uploadRequest))
+                .expectError(RuntimeException.class)
+                .verify();
+
+        verify(lambdaParserClient).parse(any(DocumentParserRequest.class));
+        verify(socketNotifierService).notifyFailure(eq("doc-1"), anyString());
+        verifyNoInteractions(documentStore);
     }
 
-    @Test
-    void shouldProcessExcelUpload() {
-        UploadRequest uploadRequest = new UploadRequest("doc-2", new ByteArrayInputStream(XLS_OLE_BYTES));
+    @ParameterizedTest
+    @MethodSource("invalidRequestCases")
+    void shouldReturnEmptyMonoForInvalidRequests(UploadRequest invalidRequest) {
+        StepVerifier.create(documentProcessingService.processUpload(invalidRequest)).expectNextCount(0).verifyComplete();
 
-        documentProcessingService.processUpload(uploadRequest).block();
-
-        assertEquals("excel", fakeLambdaParserClient.lastContentType);
-        assertEquals("doc-2", fakeDocumentStore.savedDocumentId);
-        assertEquals("excel", fakeDocumentStore.savedContentType);
-        assertEquals("doc-2", fakeSocketNotifier.documentId);
+        verifyNoInteractions(lambdaParserClient);
+        verifyNoInteractions(socketNotifierService);
+        verifyNoInteractions(documentStore);
     }
 
-    @Test
-    void shouldIgnoreNullInputStream() {
-        UploadRequest uploadRequest = new UploadRequest("doc-1", null);
-        documentProcessingService.processUpload(uploadRequest).block();
-
-        assertNull(fakeLambdaParserClient.lastContentType);
-        assertNull(fakeDocumentStore.savedDocumentId);
-        assertNull(fakeSocketNotifier.documentId);
+    private static Stream<Arguments> invalidRequestCases() {
+        return Stream.of(
+                Arguments.of((UploadRequest) null),                                       // request == null
+                Arguments.of(new UploadRequest("doc-1", null)),                           // null file stream
+                Arguments.of(new UploadRequest(null, new ByteArrayInputStream(PDF_BYTES))), // null documentId
+                Arguments.of(new UploadRequest("", new ByteArrayInputStream(XLS_OLE_BYTES))) // blank documentId
+        );
     }
 
-    @Test
-    void shouldDoNothingUnrecognizedFileType() {
-        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(UNKNOWN_BYTES));
-        documentProcessingService.processUpload(uploadRequest).block();
-
-        assertNull(fakeLambdaParserClient.lastContentType);
-        assertNull(fakeDocumentStore.savedDocumentId);
-        assertNull(fakeSocketNotifier.documentId);
+    private static Stream<Arguments> contentTypeCases() {
+        return Stream.of(
+                Arguments.of(PDF_BYTES, "pdf"),
+                Arguments.of(XLS_OLE_BYTES, "excel"),
+                Arguments.of(UNKNOWN_BYTES, null),
+                Arguments.of(ZIP_SIGNATURE_BYTES, "excel")
+        );
     }
 
-    @Test
-    void shouldRejectEmptyFileStream() {
-        UploadRequest uploadRequest = new UploadRequest("doc-1", new ByteArrayInputStream(new byte[0]));
-        documentProcessingService.processUpload(uploadRequest).block();
-
-        assertNull(fakeLambdaParserClient.lastContentType);
-        assertNull(fakeDocumentStore.savedDocumentId);
-        assertNull(fakeSocketNotifier.documentId);
-    }
-
-    @Test
-    void shouldNotifyFailureOnParserError() {
-        fakeLambdaParserClient.shouldThrowException = true;
-        UploadRequest request = new UploadRequest("doc-1", new ByteArrayInputStream(PDF_BYTES));
-
-        documentProcessingService.processUpload(request).block();
-
-        assertEquals("doc-1", fakeSocketNotifier.failedDocumentId);
-        assertNull(fakeSocketNotifier.documentId);
-    }
-
-    private static class FakeDocumentStore implements DocumentStore {
-        String savedDocumentId;
-        String savedContentType;
-        boolean shouldThrowException;
-
-
+    private static class ThrowingInputStream extends InputStream {
         @Override
-        public void save(String documentId, String contentType, ParsedResult result) {
-            if (shouldThrowException) {
-                throw new RuntimeException("Simulated save failure.");
-            }
-
-            this.savedDocumentId = documentId;
-            this.savedContentType = contentType;
-        }
-    }
-
-    private static class FakeLambdaParserClient implements LambdaParserClient {
-        String lastContentType;
-        boolean shouldThrowException;
-
-        @Override
-        public Mono<ParsedResult> parse(DocumentParserRequest request) {
-            if (shouldThrowException) {
-               return Mono.error(new RuntimeException("Simulated parsing exception error."));
-            }
-
-            this.lastContentType = request.getContentType();
-            return Mono.just(new ParsedResult(request.getContentType()));
-        }
-    }
-
-    private static class FakeSocketNotifier implements SocketNotifier {
-        String documentId;
-        String failedDocumentId;
-        String failedReason;
-
-        @Override
-        public void notifySuccess(String documentId) {
-            this.documentId = documentId;
+        public int read() throws IOException {
+            throw new IOException("simulated read failure");
         }
 
         @Override
-        public void notifyFailure(String documentId, String reason) {
-            this.failedDocumentId = documentId;
-            this.failedReason = reason;
+        public byte @NonNull [] readAllBytes() throws IOException {
+            throw new IOException("simulated read failure");
         }
     }
+
 }

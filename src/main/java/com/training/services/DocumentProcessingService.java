@@ -1,11 +1,14 @@
 package com.training.services;
 
 import com.training.client.LambdaParserClient;
+import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
 import com.training.db.DocumentStore;
 import com.training.messaging.SocketNotifier;
+import com.training.messaging.SocketNotifierService;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +16,7 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.io.InputStream;
+
 
 /**
  * Handles an incoming loan document upload: detects the content type, parses
@@ -24,16 +28,20 @@ public class DocumentProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
 
-    DocumentStore documentStore;
-    LambdaParserClient lambdaParserClient;
-    SocketNotifier socketNotifier;
+
+    private final DocumentStore documentStore;
+    private final LambdaParserClient lambdaParserClient;
+    private final SocketNotifier socketNotifier;
+    private final ContentTypeService contentTypeService;
 
     public DocumentProcessingService(DocumentStore documentStore,
-                                      LambdaParserClient lambdaParserClient,
-                                      SocketNotifier socketNotifier) {
+            LambdaParserClient lambdaParserClient,
+                                     SocketNotifier socketNotifier,
+                                     ContentTypeService contentTypeService) {
         this.documentStore = documentStore;
         this.lambdaParserClient = lambdaParserClient;
         this.socketNotifier = socketNotifier;
+        this.contentTypeService = contentTypeService;
     }
 
     public Mono<Void> processUpload(UploadRequest request) {
@@ -58,60 +66,21 @@ public class DocumentProcessingService {
             return Mono.empty();
         }
 
-        String contentType = detectType(data);
+        String contentType = contentTypeService.detectType(data);
         if (contentType == null) {
             logger.warn("Unrecognized content type for uploaded document {}", documentId);
-            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document"  + documentId);
+            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document "  + documentId);
             return Mono.empty();
         }
 
-
-
         return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
-            .doOnNext(parsedResult -> {
-                documentStore.save(documentId, contentType, parsedResult);
-                socketNotifier.notifySuccess(documentId);
-            })
-            .onErrorResume(ex -> {
+                .flatMap(parsedResult ->
+                        documentStore.save(new AddDocumentRequest(parsedResult.getSummary(), documentId, contentType))
+                                .doOnNext(savedDocument -> socketNotifier.notifySuccess(documentId))
+                )
+                .doOnError(ex -> {
                     logger.error("Failed to process document {}", documentId, ex);
                     socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
-                    return Mono.empty();
-            }).then();
-    }
-
-    private String detectType(byte[] data) {
-        if (data == null || data.length == 0) {
-            return null;
-        }
-
-        if (data.length >= 4
-                && data[0] == (byte) 0x25
-                && data[1] == (byte) 0x50
-                && data[2] == (byte) 0x44
-                && data[3] == (byte) 0x46) {
-            return "pdf";
-        }
-
-        if (data.length >= 8
-                && data[0] == (byte) 0xD0
-                && data[1] == (byte) 0xCF
-                && data[2] == (byte) 0x11
-                && data[3] == (byte) 0xE0
-                && data[4] == (byte) 0xA1
-                && data[5] == (byte) 0xB1
-                && data[6] == (byte) 0x1A
-                && data[7] == (byte) 0xE1) {
-            return "excel";
-        }
-
-        if (data.length >= 4
-                && data[0] == 'P'
-                && data[1] == 'K'
-                && data[2] == 0x03
-                && data[3] == 0x04) {
-            return "excel";
-        }
-
-        return null;
+                }).then();
     }
 }
