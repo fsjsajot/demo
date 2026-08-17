@@ -9,10 +9,10 @@ import reactor.core.publisher.Mono;
 
 @Singleton
 @Fallback
-public class LambdaParserHttpClientFallback implements LambdaParserHttpClient {
+public class LambdaParserHttpClientFallback implements LambdaParserClient {
 
     @Override
-    public Mono<HttpResponse<ParsedResult>> parseDocument(DocumentParserRequest documentParserRequest) {
+    public Mono<HttpResponse<ParsedResult>> parse(DocumentParserRequest documentParserRequest) {
         return Mono.just(
                 HttpResponse.ok(
                         new ParsedResult(

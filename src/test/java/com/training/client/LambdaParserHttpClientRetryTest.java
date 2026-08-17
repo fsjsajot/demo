@@ -6,7 +6,6 @@ import com.training.data.request.DocumentParserRequest;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.env.PropertySource;
 import io.micronaut.http.HttpResponse;
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +19,7 @@ public class LambdaParserHttpClientRetryTest {
 
     private WireMockServer wireMockServer;
     private ApplicationContext applicationContext;
-    private LambdaParserHttpClient lambdaParserHttpClient;
+    private LambdaParserClient lambdaParserClient;
 
     @BeforeEach
     void setup() {
@@ -32,10 +31,10 @@ public class LambdaParserHttpClientRetryTest {
         WireMock.configureFor("localhost", port);
 
         applicationContext = ApplicationContext.run(PropertySource.of("test", Map.of(
-                "micronaut.http.services.document-parser.url", "http://localhost:" + port
+                "lambda.parser.url", "http://localhost:" + port + "/document-parser"
         )));
 
-        lambdaParserHttpClient = applicationContext.getBean(LambdaParserHttpClient.class);
+        lambdaParserClient = applicationContext.getBean(LambdaParserClient.class);
     }
 
     @Test
@@ -54,7 +53,7 @@ public class LambdaParserHttpClientRetryTest {
         stubFor(post(urlEqualTo("/document-parser"))
                 .willReturn(aResponse().withStatus(500)));
 
-        HttpResponse<?> response = lambdaParserHttpClient.parseDocument(new DocumentParserRequest(new byte[]{1}, "pdf")).block();
+        HttpResponse<?> response = lambdaParserClient.parse(new DocumentParserRequest(new byte[]{1}, "pdf")).block();
 
         verify(4, postRequestedFor(urlEqualTo("/document-parser")));
 
