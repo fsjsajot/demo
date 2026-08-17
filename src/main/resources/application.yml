@@ -1,0 +1,3 @@
+lambda:
+  parser:
+    url: http://localhost:8080/document-parser

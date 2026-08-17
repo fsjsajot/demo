@@ -1,10 +1,12 @@
 package com.training.services;
 
-import com.training.client.LambdaParserHttpClient;
+import com.training.client.LambdaParserClient;
 import com.training.data.request.AddDocumentRequest;
 import com.training.data.request.DocumentParserRequest;
 import com.training.data.request.UploadRequest;
 import com.training.data.result.ParsedResult;
+import com.training.db.DocumentStore;
+import com.training.messaging.SocketNotifier;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +16,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Objects;
 
-import static com.training.services.ContentTypeService.detectType;
 
 /**
  * Handles an incoming loan document upload: detects the content type, parses
@@ -26,18 +27,19 @@ public class DocumentProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
 
-    private LambdaParserHttpClient lambdaParseHttpClient;
-    private DocumentService documentService;
-    private SocketNotifierService socketNotifierService;
+    private final DocumentStore documentStore;
+    private final LambdaParserClient lambdaParserClient;
+    private final SocketNotifier socketNotifier;
+    private final ContentTypeService contentTypeService;
 
-
-    public DocumentProcessingService(DocumentService documentService,
-                                     LambdaParserHttpClient lambdaParseHttpClient,
-                                     SocketNotifierService socketNotifierService
-                                     ) {
-        this.documentService = documentService;
-        this.lambdaParseHttpClient = lambdaParseHttpClient;
-        this.socketNotifierService = socketNotifierService;
+    public DocumentProcessingService(DocumentStore documentStore,
+            LambdaParserClient lambdaParserClient,
+                                     SocketNotifier socketNotifier,
+                                     ContentTypeService contentTypeService) {
+        this.documentStore = documentStore;
+        this.lambdaParserClient = lambdaParserClient;
+        this.socketNotifier = socketNotifier;
+        this.contentTypeService = contentTypeService;
     }
 
     public Mono<Void> processUpload(UploadRequest request) {
@@ -52,35 +54,33 @@ public class DocumentProcessingService {
             data = inputStream.readAllBytes();
         } catch (IOException ex) {
             logger.error("Failed to read file stream from document {}", documentId, ex);
+            socketNotifier.notifyFailure(documentId, "Failed to read file stream");
             return Mono.empty();
         }
 
         if (data.length == 0) {
             logger.warn("Rejected upload for document {}: empty file", documentId);
+            socketNotifier.notifyFailure(documentId, "Rejected upload for document" + documentId +": empty file");
             return Mono.empty();
         }
 
-        String contentType = detectType(data);
+        String contentType = contentTypeService.detectType(data);
         if (contentType == null) {
             logger.warn("Unrecognized content type for uploaded document {}", documentId);
+            socketNotifier.notifyFailure(documentId, "Unrecognized content type for uploaded document "  + documentId);
             return Mono.empty();
         }
 
-        return lambdaParseHttpClient.parseDocument(new DocumentParserRequest(data, contentType))
+        return lambdaParserClient.parse(new DocumentParserRequest(data, contentType))
                 .flatMap(parsedResult -> {
                     ParsedResult result = Objects.requireNonNull(parsedResult.body());
-                    if (!result.isSuccessful()) {
-                        return Mono.error(new RuntimeException("Parser unavailable: " + result.summary));
-                    }
 
-                    return documentService.createDocument(new AddDocumentRequest(result.summary, contentType, documentId))
-                            .doOnNext(savedDocument -> socketNotifierService.notifySuccess(documentId));
-
+                    return documentStore.save(new AddDocumentRequest(result.getSummary(), documentId, contentType))
+                            .doOnNext( _ -> socketNotifier.notifySuccess(documentId));
                 })
                 .doOnError(ex -> {
                     logger.error("Failed to process document {}", documentId, ex);
-                    socketNotifierService.notifyFailure(documentId, "Failed to process document " + documentId);
-                })
-                .then();
+                    socketNotifier.notifyFailure(documentId, "Failed to process document " + documentId);
+                }).then();
     }
 }
