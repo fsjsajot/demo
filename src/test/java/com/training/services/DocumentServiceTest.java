@@ -2,6 +2,7 @@ package com.training.services;
 
 import com.training.data.document.Document;
 import com.training.data.request.AddDocumentRequest;
+import com.training.db.DocumentStore;
 import com.training.repository.DocumentRepository;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,24 +18,24 @@ import static org.mockito.Mockito.*;
 public class DocumentServiceTest {
 
     private DocumentRepository documentRepository;
-    private DocumentService documentService;
+    private DocumentStore documentStore;
 
     @BeforeEach
     void setUp() {
         documentRepository = mock(DocumentRepository.class);
-        documentService = new DocumentService(documentRepository);
+        documentStore = new DocumentService(documentRepository);
     }
 
     @Test
     void shouldMapRequestToDocumentAndSave() {
-        AddDocumentRequest request = new AddDocumentRequest("some content", "doc-1", "pdf");
+        AddDocumentRequest request = new AddDocumentRequest("some content","doc-1",  "pdf");
 
         Document savedDocument = new Document("some content", "doc-1", "pdf");
         savedDocument.setId(new ObjectId());
 
         when(documentRepository.save(any(Document.class))).thenReturn(Mono.just(savedDocument));
 
-        Document result = documentService.createDocument(request).block();
+        Document result = documentStore.save(request).block();
 
         assertNotNull(result);
         assertEquals("doc-1", result.getDocumentId());
@@ -42,8 +43,8 @@ public class DocumentServiceTest {
         assertEquals("some content", result.getContent());
 
         verify(documentRepository).save(argThat(doc ->
-                "pdf".equals(doc.getDocumentId())          // swapped
-                        && "doc-1".equals(doc.getContentType())  // swapped
+                "doc-1".equals(doc.getDocumentId())
+                        && "pdf".equals(doc.getContentType())
                         && "some content".equals(doc.getContent())
         ));
     }

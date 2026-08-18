@@ -1,5 +1,6 @@
 package com.training.services;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -9,6 +10,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.mock;
 
 public class ContentTypeServiceTest {
 // ---------- Full, valid signatures ----------
@@ -20,22 +22,29 @@ public class ContentTypeServiceTest {
     };
     private static final byte[] ZIP_SIGNATURE_BYTES = {'P', 'K', 0x03, 0x04, 0x05, 0x06};
 
+    private ContentTypeService contentTypeService;
+
+    @BeforeEach
+    void setUp() {
+        contentTypeService = new ContentTypeService();
+    }
+
     // ---------- Null / empty ----------
 
     @Test
     void shouldReturnNullWhenDataIsNull() {
-        assertNull(ContentTypeService.detectType(null));
+        assertNull(contentTypeService.detectType(null));
     }
 
     @Test
     void shouldReturnNullWhenDataIsEmpty() {
-        assertNull(ContentTypeService.detectType(new byte[0]));
+        assertNull(contentTypeService.detectType(new byte[0]));
     }
 
     @ParameterizedTest
     @MethodSource("recognizedSignatures")
     void shouldDetectKnownContentTypes(byte[] payload, String expectedType) {
-        assertEquals(expectedType, ContentTypeService.detectType(payload));
+        assertEquals(expectedType, contentTypeService.detectType(payload));
     }
 
     private static Stream<Arguments> recognizedSignatures() {
@@ -49,7 +58,7 @@ public class ContentTypeServiceTest {
     @ParameterizedTest
     @MethodSource("tooShortForSignatures")
     void shouldReturnNullWhenDataTooShortForSignature(byte[] payload) {
-        assertNull(ContentTypeService.detectType(payload));
+        assertNull(contentTypeService.detectType(payload));
     }
 
     private static Stream<byte[]> tooShortForSignatures() {
@@ -65,10 +74,9 @@ public class ContentTypeServiceTest {
     @ParameterizedTest
     @MethodSource("nearMissSignatures")
     void shouldReturnNullWhenSignatureBytesDontMatchExactly(byte[] payload) {
-        assertNull(ContentTypeService.detectType(payload));
+        assertNull(contentTypeService.detectType(payload));
     }
 
-    // Asked claude for this to test most of the branches
     private static Stream<byte[]> nearMissSignatures() {
         return Stream.of(
                 // PDF near-misses
@@ -94,7 +102,7 @@ public class ContentTypeServiceTest {
     @ParameterizedTest
     @MethodSource("unrecognizedData")
     void shouldReturnNullForUnrecognizedData(byte[] payload) {
-        assertNull(ContentTypeService.detectType(payload));
+        assertNull(contentTypeService.detectType(payload));
     }
 
     private static Stream<byte[]> unrecognizedData() {

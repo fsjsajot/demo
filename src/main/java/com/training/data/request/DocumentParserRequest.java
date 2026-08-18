@@ -6,8 +6,8 @@ import io.micronaut.serde.annotation.Serdeable;
 @Serdeable
 public class DocumentParserRequest {
 
-    public byte[] data;
-    public String contentType;
+    byte[] data;
+    String contentType;
 
     public DocumentParserRequest(byte[] data, String contentType) {
         this.data = data;

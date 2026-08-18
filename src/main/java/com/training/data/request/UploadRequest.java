@@ -3,9 +3,9 @@ package com.training.data.request;
 import java.io.InputStream;
 
 public class UploadRequest {
-    public InputStream fileStream;
-    public String documentId;
-    public String requestId;
+    InputStream fileStream;
+    String documentId;
+    String requestId;
 
     public InputStream getFileStream() { return fileStream; }
     public String getDocumentId() { return documentId; }

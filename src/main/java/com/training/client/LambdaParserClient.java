@@ -10,11 +10,11 @@ import io.micronaut.retry.annotation.Recoverable;
 import io.micronaut.retry.annotation.Retryable;
 import reactor.core.publisher.Mono;
 
-@Client(id= "document-parser")
-public interface LambdaParserHttpClient {
+@Client(value = "${lambda.parser.url}", id = "document-parser")
+public interface LambdaParserClient {
 
-    @Post("/document-parser")
+    @Post
     @Retryable(attempts = "3", delay = "250ms", multiplier = "2", maxDelay = "1s")
     @Recoverable
-    Mono<HttpResponse<ParsedResult>> parseDocument(@Body DocumentParserRequest documentParserRequest);
+    Mono<HttpResponse<ParsedResult>> parse(@Body DocumentParserRequest documentParserRequest);
 }
