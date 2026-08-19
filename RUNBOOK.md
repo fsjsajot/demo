@@ -38,7 +38,7 @@ Confirm the fix is deployed before continuing.
 
 1. **Get Message(s)** on `parse-result.dead.queue`. Select Ack mode = `Ack message requeue false` which removes it from the DLQ
 2. Copy the payload.
-3. **Exchanges** → `parse-result.exchange` → **Publish message**, routing key `parse-result`, paste payload, **Publish**. This resets `x-retry-count` the redriven message gets a fresh 5 attempts.
+3. **Exchanges** → `parse-result.exchange` → **Publish message**, routing key `parse-result`, paste payload, **Publish**. This resets `x-retry-count` the redriven message gets a fresh 4 attempts (1 initial attempt, 3 retries).
 4. Repeat per message.
 
 ## 5. Verify

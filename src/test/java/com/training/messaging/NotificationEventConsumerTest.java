@@ -1,15 +1,21 @@
 package com.training.messaging;
 
+import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.training.services.SocketMessageCreatorService;
 import io.micronaut.rabbitmq.bind.RabbitAcknowledgement;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class NotificationEventConsumerTest {
@@ -21,6 +27,7 @@ class NotificationEventConsumerTest {
     private Channel channel;
 
     private static final int MAX_RETRIES = 3;
+    private static final String RETRY_HEADER = "x-retry-count";
 
     @BeforeEach
     void setUp() throws IOException {
@@ -94,7 +101,7 @@ class NotificationEventConsumerTest {
     }
 
     @Test
-    void shouldRetryThenDeadLetterAfterMaxRetries() {
+    void shouldRetryThenDeadLetterAfterMaxRetries() throws IOException, TimeoutException {
         Map<String, Object> payload = Map.of( "documentId", "file-doc-1",
                 "summary", "Document doc-1 is processed.",
                 "successful", "test");
@@ -105,6 +112,16 @@ class NotificationEventConsumerTest {
 
         verify(acknowledgement, times(MAX_RETRIES)).ack();
         verify(acknowledgement, never()).nack(anyBoolean(), anyBoolean());
+
+        ArgumentCaptor<AMQP.BasicProperties> amqpArgCaptor = ArgumentCaptor.forClass(AMQP.BasicProperties.class);
+        verify(channel, times(MAX_RETRIES)).basicPublish(anyString(), anyString(), amqpArgCaptor.capture(), any());
+        verify(channel, times(MAX_RETRIES)).close();
+
+        List<AMQP.BasicProperties> props = amqpArgCaptor.getAllValues();
+
+        for (int i = 0; i < MAX_RETRIES; i++) {
+            assertEquals(i + 1, props.get(i).getHeaders().get(RETRY_HEADER));
+        }
 
         consumer.onNotificationEvent(payload, MAX_RETRIES, acknowledgement);
         verify(acknowledgement).nack(false, false);

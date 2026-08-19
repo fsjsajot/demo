@@ -4,6 +4,7 @@ import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.training.services.SocketMessageCreatorService;
+import io.micronaut.core.annotation.Nullable;
 import io.micronaut.messaging.annotation.MessageHeader;
 import io.micronaut.rabbitmq.annotation.Queue;
 import io.micronaut.rabbitmq.annotation.RabbitListener;
@@ -28,6 +29,7 @@ public class NotificationEventConsumer {
 
     private static final String EXCHANGE = "parse-result.exchange";
     private static final String ROUTING_KEY = "parse-result";
+    private static final String QUEUE = "parse-result.queue";
 
     private static final String RETRY_HEADER = "x-retry-count";
     private static final int MAX_RETRIES = 3;
@@ -38,9 +40,9 @@ public class NotificationEventConsumer {
         this.connection = connection;
     }
 
-    @Queue("document-parser.queue")
+    @Queue(QUEUE)
     public void onNotificationEvent(Map<String, Object> event,
-                                    @MessageHeader(RETRY_HEADER) Integer retryCountHeader,
+                                    @Nullable @MessageHeader(RETRY_HEADER) Integer retryCountHeader,
                                     RabbitAcknowledgement acknowledgement) {
         int retryCount = retryCountHeader == null ? 0 : retryCountHeader;
         try {
