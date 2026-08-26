@@ -34,15 +34,15 @@ public class DocumentParserController {
 
         if (documentParserRequest.getContentType().equals("pdf")) {
             logger.info("Parsing PDF");
-            return Mono.just(HttpResponse.ok(new ParsedResult("This is a pdf file.")));
+            return Mono.just(HttpResponse.ok(new ParsedResult("This is a pdf file.", true)));
         }
 
         if (documentParserRequest.getContentType().equals("excel")) {
             logger.info("Parsing Excel");
-            return Mono.just(HttpResponse.ok(new ParsedResult("This is an excel file.")));
+            return Mono.just(HttpResponse.ok(new ParsedResult("This is an excel file.", true)));
         }
 
         logger.info("Unsupported content type");
-        return Mono.just(HttpResponse.badRequest(new ParsedResult("Unsupported content type.")));
+        return Mono.just(HttpResponse.badRequest(new ParsedResult("Unsupported content type.", false)));
     }
 }

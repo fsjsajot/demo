@@ -1,25 +1,48 @@
 <configuration>
 
+    <!-- JSON Console Appender for structured logging -->
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <customFields>{"service":"document-parser-service","environment":"local"}</customFields>
+            <includeStackTrace>true</includeStackTrace>
+            <prettyPrint>false</prettyPrint>
+        </encoder>
+    </appender>
+
+    <!-- Text Console Appender for human-readable logs (development) -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <!-- encoders are assigned the type
-             ch.qos.logback.classic.encoder.PatternLayoutEncoder by default -->
         <encoder>
             <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%thread]) %highlight(%-5level) %magenta(%logger{36}) - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- Root logger - JSON logging enabled by default -->
     <root level="info">
-        <appender-ref ref="STDOUT" />
+        <appender-ref ref="JSON_CONSOLE" />
     </root>
 
+    <!-- Application-specific loggers -->
     <logger name="com.training" level="DEBUG" additivity="false">
-        <appender-ref ref="STDOUT" />
+        <appender-ref ref="JSON_CONSOLE" />
     </logger>
 
+    <!-- Micronaut and framework logging -->
     <logger name="io.micronaut" level="INFO" />
     <logger name="io.netty" level="WARN" />
     <logger name="io.micronaut.web.router" level="TRACE"/>
+    <logger name="io.micronaut.http.filter" level="DEBUG"/>
+    
+    <!-- Database and messaging -->
     <logger name="org.mongodb.driver.cluster" level="INFO"/>
     <logger name="org.mongodb.driver" level="DEBUG"/>
     <logger name="io.micronaut.rabbitmq" level="DEBUG"/>
+    <logger name="io.micronaut.retry" level="DEBUG"/>
+    <logger name="io.micronaut.http.client" level="DEBUG"/>
+
+    <!-- To use text logging instead, comment out the JSON root logger above and uncomment below: -->
+    <!-- <root level="info"> -->
+    <!--     <appender-ref ref="STDOUT" /> -->
+    <!-- </root> -->
+
 </configuration>

@@ -36,6 +36,9 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
     testImplementation("io.projectreactor:reactor-test")
     implementation("io.micronaut.rabbitmq:micronaut-rabbitmq")
+    implementation("io.micronaut:micronaut-retry")
+    testImplementation("org.wiremock:wiremock-standalone:3.13.2")
+    implementation("net.logstash.logback:logstash-logback-encoder:8.0")
     runtimeOnly("org.yaml:snakeyaml")
 }
 

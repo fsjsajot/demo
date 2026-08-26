@@ -75,6 +75,10 @@ public class DocumentProcessingService {
                 .flatMap(parsedResult -> {
                     ParsedResult result = Objects.requireNonNull(parsedResult.body());
 
+                    if (!result.isSuccessful()) {
+                        return Mono.error(new RuntimeException(result.getSummary()));
+                    }
+
                     return documentStore.save(new AddDocumentRequest(result.getSummary(), documentId, contentType))
                             .doOnNext( _ -> socketNotifier.notifySuccess(documentId));
                 })
