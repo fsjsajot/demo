@@ -14,7 +14,7 @@ Management UI → **Queues** → `parse-result.dead.queue` → note the **Ready*
 **Get Message(s)** on the DLQ, Ack mode = `Nack message requeue true`
 Description for each headers:
   - x-first-death-reason: reason for the message to get into DLQ.
-  - x-retry-count how many times the consumer retried before giving up. 0 means it never reached the consumer method at all while 5 means it went through the full retry cycle before dead-lettering.
+  - x-retry-count how many times the consumer retried before giving up. 0 means the first delivery reached the consumer with no prior retries while 3 means it went through the full retry cycle before dead-lettering.
 
 ## 3. Fix the root cause
 

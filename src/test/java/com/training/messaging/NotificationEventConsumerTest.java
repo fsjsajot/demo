@@ -58,7 +58,7 @@ class NotificationEventConsumerTest {
     }
 
     @Test
-    void shouldRequeueOnMissingSuccessfulField() {
+    void shouldRetryOnMissingSuccessfulField() {
         Map<String, Object> payload = Map.of("summary", "content", "documentId", "doc-1");
 
         consumer.onNotificationEvent(payload, 0, acknowledgement);
@@ -68,7 +68,7 @@ class NotificationEventConsumerTest {
     }
 
     @Test
-    void shouldRequeueOnNullSummary() {
+    void shouldRetryOnNullSummary() {
         Map<String, Object> payload = Map.of( "message", "doc-1 processed.", "successful", true);
 
         consumer.onNotificationEvent(payload, 0, acknowledgement);
@@ -78,7 +78,7 @@ class NotificationEventConsumerTest {
     }
 
     @Test
-    void shouldRequeueOnNullDocumentId() {
+    void shouldRetryOnNullDocumentId() {
         Map<String, Object> payload = Map.of( "summary", "Document doc-1 is processed.", "successful", true);
 
         consumer.onNotificationEvent(payload, 0, acknowledgement);
@@ -88,7 +88,7 @@ class NotificationEventConsumerTest {
     }
 
     @Test
-    void shouldRequeueOnInvalidFieldType() {
+    void shouldRetryOnInvalidFieldType() {
         Map<String, Object> payload = Map.of( "documentId", "file-doc-1",
                 "summary", "Document doc-1 is processed.",
                 "successful", "test");
@@ -101,7 +101,7 @@ class NotificationEventConsumerTest {
     }
 
     @Test
-    void shouldRetryThenDeadLetterAfterMaxRetries() throws IOException, TimeoutException {
+    void shouldRetryThenDeadLetterAfterMaxRetries() throws IOException, TimeoutException, InterruptedException {
         Map<String, Object> payload = Map.of( "documentId", "file-doc-1",
                 "summary", "Document doc-1 is processed.",
                 "successful", "test");
@@ -117,6 +117,9 @@ class NotificationEventConsumerTest {
         verify(channel, times(MAX_RETRIES)).basicPublish(anyString(), anyString(), amqpArgCaptor.capture(), any());
         verify(channel, times(MAX_RETRIES)).close();
 
+        verify(channel, times(MAX_RETRIES)).confirmSelect();
+        verify(channel, times(MAX_RETRIES)).waitForConfirmsOrDie(anyLong());
+
         List<AMQP.BasicProperties> props = amqpArgCaptor.getAllValues();
 
         for (int i = 0; i < MAX_RETRIES; i++) {
@@ -125,5 +128,41 @@ class NotificationEventConsumerTest {
 
         consumer.onNotificationEvent(payload, MAX_RETRIES, acknowledgement);
         verify(acknowledgement).nack(false, false);
+    }
+
+    @Test
+    void shouldDeadLetterOriginalWhenRetryPublishFailsToConfirm() throws IOException, TimeoutException, InterruptedException {
+        Map<String, Object> payload = Map.of("documentId", "file-doc-1",
+                "summary", "Document doc-1 is processed.",
+                "successful", "test");
+
+        doThrow(new TimeoutException("confirm timed out"))
+                .when(channel).waitForConfirmsOrDie(anyLong());
+
+        consumer.onNotificationEvent(payload, 0, acknowledgement);
+
+        verify(acknowledgement).nack(false, false);
+        verify(acknowledgement, never()).nack(false, true);
+        verify(acknowledgement, never()).ack();
+
+        verify(channel).confirmSelect();
+        verify(channel).basicPublish(anyString(), anyString(), any(), any());
+        verify(channel).waitForConfirmsOrDie(anyLong());
+    }
+
+    @Test
+    void shouldDeadLetterOriginalWhenBasicPublishThrows() throws IOException {
+        Map<String, Object> payload = Map.of("documentId", "file-doc-1",
+                "summary", "Document doc-1 is processed.",
+                "successful", "test");
+
+        doThrow(new IOException("channel closed"))
+                .when(channel).basicPublish(anyString(), anyString(), any(), any());
+
+        consumer.onNotificationEvent(payload, 0, acknowledgement);
+
+        verify(acknowledgement).nack(false, false);
+        verify(acknowledgement, never()).nack(false, true);
+        verify(acknowledgement, never()).ack();
     }
 }

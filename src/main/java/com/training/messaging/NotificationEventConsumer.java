@@ -33,6 +33,7 @@ public class NotificationEventConsumer {
 
     private static final String RETRY_HEADER = "x-retry-count";
     private static final int MAX_RETRIES = 3;
+    private static final long CONFIRM_TIMEOUT = 5000;
 
     public NotificationEventConsumer(SocketMessageCreatorService messageCreatorService,
                                      Connection connection) {
@@ -80,8 +81,13 @@ public class NotificationEventConsumer {
             if (retryCount < MAX_RETRIES) {
                 logger.warn("Parser result message failed (attempt {}/{}), requeueing: {}",
                         retryCount + 1, MAX_RETRIES, ex.getMessage());
-                retry(event, retryCount + 1);
-                acknowledgement.ack();
+                try {
+                    retry(event, retryCount + 1);
+                    acknowledgement.ack();
+                } catch (Exception e) {
+                    logger.error("Failed to republish retry message, nacking original with requeue", e);
+                    acknowledgement.nack(false, false);
+                }
             } else {
                 logger.error("Parser-result message exceeded {} retries, dead-lettering: {}",
                         MAX_RETRIES, ex.getMessage());
@@ -93,6 +99,7 @@ public class NotificationEventConsumer {
 
     private void retry(Map<String, Object> event, int newRetryCount) {
         try (Channel channel = connection.createChannel()) {
+            channel.confirmSelect();
             Map<String, Object> headers = new HashMap<>();
             headers.put(RETRY_HEADER, newRetryCount);
 
@@ -104,8 +111,13 @@ public class NotificationEventConsumer {
 
             byte[] body = messageCreatorService.toJsonBytes(event);
             channel.basicPublish(EXCHANGE, ROUTING_KEY, props, body);
+
+            channel.waitForConfirmsOrDie(CONFIRM_TIMEOUT);
         } catch (IOException | TimeoutException e) {
             throw new RuntimeException("Failed to republish document-parser message for retry", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
         }
     }
 }

@@ -26,7 +26,7 @@ This brings up:
 Copy the sample config and adjust as needed:
 
 ```bash
-cp application-sample.properties application.properties
+cp application.sample.properties application.properties
 ```
 
 ### 3. Run the application
@@ -55,7 +55,7 @@ Logs are emitted as structured JSON on the console that ties every log line for 
 The upload path (`DocumentProcessingService.processUpload`) is built on Project Reactor (`Mono`/`Flux`). File bytes are read synchronously up front, then content-type detection, parsing, and persistence are chained reactively.
 
 ### Declarative HTTP client with retry + fallback
-The external parser is called via a Micronaut declarative `@Client` interface. It support 3 retries with a total 4 attempts with expotential backoff capping at 1s between attempts. Once exhausted a fallback will be triggered.
+The external parser is called via a Micronaut declarative `@Client` interface. It support 3 retries with a total 4 attempts with exponential backoff capping at 1s between attempts. Once exhausted a fallback will be triggered.
 
 ### Parser "soft failure" is treated as a hard failure
 The parser can return a `200 OK` with a body indicating logical failure. For this instance, this is explicitly checked and converted into a reactive error, rather than being silently treated as a successful result. But depending the requirement for fallback, its behavior can be changed.
