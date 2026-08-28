@@ -4,7 +4,6 @@
     <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <includeMdcKeyName>correlationId</includeMdcKeyName>
-            <customFields>{"service":"document-parser-service","environment":"local"}</customFields>
             <includeStackTrace>true</includeStackTrace>
             <prettyPrint>false</prettyPrint>
         </encoder>
